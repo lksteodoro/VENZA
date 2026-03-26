@@ -1,0 +1,242 @@
+/* ─── KPI Cards Grid ─────────────────────────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.kpi-card {
+  background-color: var(--bg-surface);
+  padding: 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.kpi-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-main);
+}
+
+.kpi-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.kpi-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.kpi-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-top: 6px;
+  line-height: 1.1;
+}
+
+.kpi-trend {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.kpi-trend.positive {
+  color: var(--success);
+}
+
+.kpi-trend.neutral {
+  color: var(--text-muted);
+}
+
+.kpi-trend.warning {
+  color: var(--warning);
+}
+
+/* ─── KPI Icon Badges ─────────────────────────────────────────────────────── */
+.kpi-icon {
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.kpi-icon.danger {
+  background-color: var(--danger-light);
+  color: #f87171;
+}
+
+.kpi-icon.success {
+  background-color: var(--success-light);
+  color: #34d399;
+}
+
+.kpi-icon.primary {
+  background-color: var(--primary-light);
+  color: var(--primary);
+}
+
+.kpi-icon.warning {
+  background-color: var(--warning-light);
+  color: var(--warning);
+}
+
+/* ─── Bottom Row ──────────────────────────────────────────────────────────── */
+.dashboard-bottom-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  flex: 1;
+  min-height: 400px;
+}
+
+/* ─── Chart Panel ─────────────────────────────────────────────────────────── */
+.chart-panel {
+  background-color: var(--bg-surface);
+  padding: 24px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 24px;
+  color: var(--text-main);
+}
+
+.chart-panel-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ─── Alerts Panel ────────────────────────────────────────────────────────── */
+.alerts-panel {
+  background-color: var(--bg-surface);
+  padding: 24px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  overflow-y: auto;
+}
+
+.alerts-panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-main);
+}
+
+.alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ─── Alert Items ─────────────────────────────────────────────────────────── */
+.alert-item {
+  padding: 14px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.alert-item.danger {
+  border-left: 3px solid var(--danger);
+  background-color: var(--danger-light);
+}
+
+.alert-item.success {
+  border-left: 3px solid var(--success);
+  background-color: var(--success-light);
+}
+
+.alert-item.primary {
+  border-left: 3px solid var(--primary);
+  background-color: var(--primary-light);
+}
+
+.alert-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.alert-title.danger {
+  color: #f87171;
+}
+
+.alert-title.success {
+  color: #34d399;
+}
+
+.alert-title.primary {
+  color: var(--primary);
+}
+
+.alert-body {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.alert-body strong {
+  color: var(--text-main);
+}
+
+.alert-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.alert-btn {
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  transition: opacity 0.2s;
+}
+
+.alert-btn:hover {
+  opacity: 0.85;
+}
+
+.alert-btn.danger-solid {
+  background-color: var(--danger);
+  color: white;
+}
+
+.alert-btn.danger-outline {
+  background-color: transparent;
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.alert-btn.success-solid {
+  background-color: var(--success);
+  color: white;
+}
+
+.alert-btn.primary-link {
+  background-color: transparent;
+  color: var(--primary);
+  padding: 0;
+  text-decoration: none;
+  display: inline-block;
+}
