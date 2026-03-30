@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import KanbanBoard from '../components/KanbanBoard';
 import EditModal from '../components/EditModal';
-import { MOCK_CARDS } from '../data/mockData';
 
-const KanbanView = () => {
-  const [cards, setCards] = useState(MOCK_CARDS);
+const KanbanView = ({ cards, setCards }) => {
   const [editingCard, setEditingCard] = useState(null);
 
   const updateCard = (updatedCard) => {

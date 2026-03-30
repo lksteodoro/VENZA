@@ -1,15 +1,150 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CLIENTS, ACCOUNTS, PROJECTS, BASE_SUBTASKS } from '../data/mockData';
 import AdsManagerTable from '../components/AdsManagerTable';
 import ProjectCard from '../components/ProjectTaskManager';
-import { LayoutDashboard, FolderOpen, Plus, CheckCircle2, AlertCircle, Clock, Camera, Inbox, ExternalLink } from 'lucide-react';
+import MetaAdCreator from '../components/MetaAdCreator';
+import { LayoutDashboard, FolderOpen, Plus, CheckCircle2, AlertCircle, Clock, Camera, Inbox, ExternalLink, Cog, Loader2, Database } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
+const META_API = 'https://graph.facebook.com/v21.0';
 
-// ─── New Client Modal ─────────────────────────────────────────────────────────
-const NewClientModal = ({ onConfirm, onCancel }) => {
-  const [name, setName] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
+// ─── Modal: Configurar Acesso Meta por Cliente ────────────────────────────────
+const MetaConfigModal = ({ client, onClose, storageKey: storageKeyProp, label }) => {
+  const storageKey = storageKeyProp || `meta_defaults_${client.id}`;
+  const token = localStorage.getItem('meta_access_token');
+
+  const loadSaved = () => {
+    try { return JSON.parse(localStorage.getItem(storageKey)) || {}; } catch { return {}; }
+  };
+
+  const [bms, setBms] = useState([]);
+  const [adAccounts, setAdAccounts] = useState([]);
+  const [pages, setPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
+
+  const saved_ = loadSaved();
+  const [bmId, setBmId] = useState(saved_.bmId || '');
+  const [adAccountId, setAdAccountId] = useState(saved_.adAccountId || '');
+  const [pageId, setPageId] = useState(saved_.pageId || '');
+
+  // Carrega BMs e Páginas da API
+  useEffect(() => {
+    if (!token) { setLoading(false); return; }
+    Promise.all([
+      fetch(`${META_API}/me/businesses?fields=id,name&limit=50&access_token=${token}`).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(`${META_API}/me/adaccounts?fields=id,name,account_status&limit=100&access_token=${token}`).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(`${META_API}/me/accounts?fields=id,name&limit=50&access_token=${token}`).then(r => r.json()).catch(() => ({ data: [] })),
+    ]).then(([bmRes, accRes, pageRes]) => {
+      const bmList = [{ id: '__direct__', name: 'Acesso Direto (sem BM)' }, ...(bmRes.data || [])];
+      setBms(bmList);
+      setAdAccounts((accRes.data || []).filter(a => a.account_status === 1).map(a => ({ id: a.id, name: a.name })));
+      setPages(pageRes.data || []);
+      if (!bmId && bmList.length) setBmId(bmList[0].id);
+      setLoading(false);
+    });
+  }, [token]);
+
+  // Recarrega contas da BM selecionada
+  useEffect(() => {
+    if (!token || !bmId || bmId === '__direct__') return;
+    fetch(`${META_API}/${bmId}/owned_ad_accounts?fields=id,name,account_status&limit=100&access_token=${token}`)
+      .then(r => r.json())
+      .then(json => {
+        if (!json.error) setAdAccounts((json.data || []).filter(a => a.account_status === 1).map(a => ({ id: a.id, name: a.name })));
+      });
+  }, [bmId, token]);
+
+  const handleSave = () => {
+    localStorage.setItem(storageKey, JSON.stringify({ bmId, adAccountId, pageId }));
+    setSaved(true);
+    setTimeout(onClose, 800);
+  };
+
+  const bmName = bms.find(b => b.id === bmId)?.name;
+  const accName = adAccounts.find(a => a.id === adAccountId)?.name;
+  const pageName = pages.find(p => p.id === pageId)?.name;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+      <div style={{ width: '440px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '16px', padding: '28px', boxShadow: '0 24px 48px rgba(0,0,0,0.4)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+          <Database size={18} color="var(--primary)" />
+          <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>Configurar acesso Meta</h3>
+        </div>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '24px' }}>
+          Pré-seleciona BM, conta e página para <strong style={{ color: 'var(--text-main)' }}>{label || client.name}</strong> no Meta Ad Creator.
+        </p>
+
+        {!token ? (
+          <div style={{ padding: '16px', background: 'rgba(239,68,68,0.08)', borderRadius: '8px', fontSize: '13px', color: '#ef4444', marginBottom: '20px' }}>
+            Configure o token Meta em <strong>Configurações</strong> para usar esta funcionalidade.
+          </div>
+        ) : loading ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '13px', marginBottom: '20px' }}>
+            <Loader2 size={14} color="var(--primary)" style={{ animation: 'spin 1s linear infinite' }} /> Carregando dados da Meta API...
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
+            {/* BM */}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>Business Manager</label>
+              <select value={bmId} onChange={e => { setBmId(e.target.value); setAdAccountId(''); }} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-main)', background: 'var(--bg-app)', color: 'var(--text-main)', fontSize: '13px', outline: 'none' }}>
+                <option value="">— Selecione —</option>
+                {bms.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+            {/* Conta */}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>Conta de Anúncios</label>
+              <select value={adAccountId} onChange={e => setAdAccountId(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-main)', background: 'var(--bg-app)', color: 'var(--text-main)', fontSize: '13px', outline: 'none' }}>
+                <option value="">— Selecione —</option>
+                {adAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            {/* Página */}
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>Página do Facebook</label>
+              <select value={pageId} onChange={e => setPageId(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-main)', background: 'var(--bg-app)', color: 'var(--text-main)', fontSize: '13px', outline: 'none' }}>
+                <option value="">— Selecione —</option>
+                {pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            {/* Resumo */}
+            {bmId && adAccountId && pageId && (
+              <div style={{ padding: '10px 14px', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                <CheckCircle2 size={12} color="#10b981" style={{ display: 'inline', marginRight: '6px' }} />
+                <strong style={{ color: '#10b981' }}>Pronto · </strong>
+                {bmId !== '__direct__' && <>{bmName} → </>}{accName} → {pageName}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '11px', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-muted)', fontWeight: '600', cursor: 'pointer', fontSize: '13px' }}>
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!bmId || !adAccountId || !pageId || saved}
+            style={{ flex: 2, padding: '11px', borderRadius: '8px', border: 'none', background: saved ? '#10b981' : 'var(--primary)', color: '#fff', fontWeight: '700', cursor: bmId && adAccountId && pageId ? 'pointer' : 'not-allowed', fontSize: '13px', opacity: !bmId || !adAccountId || !pageId ? 0.5 : 1, transition: 'background 0.2s' }}
+          >
+            {saved ? '✓ Salvo!' : '💾 Salvar como padrão'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// ─── Client Modal (New/Edit) ──────────────────────────────────────────────────
+const ClientModal = ({ initialData, onConfirm, onCancel }) => {
+  const [name, setName] = useState(initialData?.name || '');
+  const [avatarUrl, setAvatarUrl] = useState(initialData?.avatarUrl || '');
+  const [metaPageId, setMetaPageId] = useState(initialData?.metaPageId || '');
+  const [metaAdAccountId, setMetaAdAccountId] = useState(initialData?.metaAdAccountId || '');
 
   return (
     <div style={{
@@ -18,38 +153,26 @@ const NewClientModal = ({ onConfirm, onCancel }) => {
     }}>
       <div style={{
         backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)',
-        borderRadius: '16px', padding: '32px', width: '400px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
+        borderRadius: '16px', padding: '32px', width: '400px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+        maxHeight: '90vh', overflowY: 'auto'
       }}>
-        <h3 style={{ fontSize: '20px', fontWeight: '800', marginBottom: '8px', color: 'var(--text-main)', letterSpacing: '-0.5px' }}>Novo Cliente</h3>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '24px' }}>Cadastre um novo workspace isolado.</p>
+        <h3 style={{ fontSize: '20px', fontWeight: '800', marginBottom: '8px', color: 'var(--text-main)', letterSpacing: '-0.5px' }}>
+          {initialData ? 'Editar Cliente' : 'Novo Cliente'}
+        </h3>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '24px' }}>Configure o workspace isolado e as integrações.</p>
 
-        <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          NOME DO CLIENTE
-        </label>
+        <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>NOME DO CLIENTE</label>
         <input
           autoFocus
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder="Ex: Cliente A"
-          style={{
-            width: '100%', padding: '12px 16px', fontSize: '14px',
-            border: '1px solid var(--border-main)', borderRadius: '10px',
-            backgroundColor: 'var(--bg-app)', color: 'var(--text-main)',
-            outline: 'none', boxSizing: 'border-box', marginBottom: '20px',
-            transition: 'border-color 0.2s'
-          }}
-          onFocus={e => e.target.style.borderColor = 'var(--primary)'}
-          onBlur={e => e.target.style.borderColor = 'var(--border-main)'}
+          style={{ width: '100%', padding: '12px 16px', fontSize: '14px', border: '1px solid var(--border-main)', borderRadius: '10px', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box', marginBottom: '16px' }}
         />
 
-        <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          URL DA FOTO / AVATAR
-        </label>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-          <div style={{
-            width: '44px', height: '44px', borderRadius: '50%', backgroundColor: 'var(--bg-app)', border: '1px dashed var(--border-main)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden'
-          }}>
+        <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>URL DA FOTO / AVATAR</label>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+          <div style={{ width: '44px', height: '44px', borderRadius: '50%', backgroundColor: 'var(--bg-app)', border: '1px dashed var(--border-main)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
             {avatarUrl ? <img src={avatarUrl} alt="prev" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} /> : <Camera size={18} color="var(--text-muted)" />}
             <Camera size={18} color="var(--text-muted)" style={{ display: avatarUrl ? 'none' : 'block' }} />
           </div>
@@ -57,27 +180,38 @@ const NewClientModal = ({ onConfirm, onCancel }) => {
             value={avatarUrl}
             onChange={e => setAvatarUrl(e.target.value)}
             placeholder="https://..."
-            style={{
-              flex: 1, padding: '12px 14px', fontSize: '14px',
-              border: '1px solid var(--border-main)', borderRadius: '10px',
-              backgroundColor: 'var(--bg-app)', color: 'var(--text-main)',
-              outline: 'none', boxSizing: 'border-box',
-              transition: 'border-color 0.2s'
-            }}
-            onFocus={e => e.target.style.borderColor = 'var(--primary)'}
-            onBlur={e => e.target.style.borderColor = 'var(--border-main)'}
+            style={{ flex: 1, padding: '12px 14px', fontSize: '14px', border: '1px solid var(--border-main)', borderRadius: '10px', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box' }}
           />
         </div>
+
+        <div style={{ height: '1px', background: 'var(--border-light)', margin: '20px 0' }} />
+        <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--primary)', marginBottom: '12px', textTransform: 'uppercase' }}>Configuração Meta Ads</h4>
+
+        <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Meta Page ID</label>
+        <input
+          value={metaPageId}
+          onChange={e => setMetaPageId(e.target.value)}
+          placeholder="Ex: 1234567890123"
+          style={{ width: '100%', padding: '12px 16px', fontSize: '14px', border: '1px solid var(--border-main)', borderRadius: '10px', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box', marginBottom: '16px' }}
+        />
+
+        <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ad Account ID (act_...)</label>
+        <input
+          value={metaAdAccountId}
+          onChange={e => setMetaAdAccountId(e.target.value)}
+          placeholder="Ex: act_1234567891234"
+          style={{ width: '100%', padding: '12px 16px', fontSize: '14px', border: '1px solid var(--border-main)', borderRadius: '10px', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box', marginBottom: '24px' }}
+        />
 
         <div style={{ display: 'flex', gap: '12px' }}>
           <button onClick={onCancel} className="btn-secondary" style={{ flex: 1, padding: '12px', borderRadius: '10px' }}>Cancelar</button>
           <button
-            onClick={() => name.trim() && onConfirm(name.trim(), avatarUrl.trim() || 'https://i.pravatar.cc/150')}
+            onClick={() => name.trim() && onConfirm({ name: name.trim(), avatarUrl: avatarUrl.trim() || 'https://i.pravatar.cc/150', metaPageId: metaPageId.trim(), metaAdAccountId: metaAdAccountId.trim() })}
             disabled={!name.trim()}
             className="btn-primary"
             style={{ flex: 1, padding: '12px', borderRadius: '10px', opacity: name.trim() ? 1 : 0.5 }}
           >
-            Cadastrar
+            {initialData ? 'Salvar' : 'Cadastrar'}
           </button>
         </div>
       </div>
@@ -171,24 +305,40 @@ const PROJECTS_KEY = 'venza_projects';
 const loadFromStorage = (key, fallback) => {
   try {
     const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : fallback;
+    if (!stored) return fallback;
+    const parsed = JSON.parse(stored);
+    if (key === CLIENTS_KEY && Array.isArray(parsed)) {
+      // Atualiza nome/avatar dos clientes seed (mockData é a fonte da verdade para esses campos)
+      // e adiciona novos clientes seed que ainda não existem no storage
+      const seedMap = new Map(fallback.map(c => [c.id, c]));
+      const merged = parsed.map(c => seedMap.has(c.id)
+        ? { ...c, name: seedMap.get(c.id).name, avatarUrl: seedMap.get(c.id).avatarUrl }
+        : c
+      );
+      const storedIds = new Set(parsed.map(c => c.id));
+      const newSeeded = fallback.filter(c => !storedIds.has(c.id));
+      return newSeeded.length > 0 ? [...merged, ...newSeeded] : merged;
+    }
+    return parsed;
   } catch { return fallback; }
 };
 
 const Clientes = ({ demandas = [] }) => {
   const [clients, setClients] = useState(() => loadFromStorage(CLIENTS_KEY, CLIENTS));
-  const [selectedClient, setSelectedClient] = useState(null);
+  const [selectedClient, setSelectedClient] = useState(() => {
+    const cs = loadFromStorage(CLIENTS_KEY, CLIENTS);
+    return cs[0] || null;
+  });
   const [activeTab, setActiveTab] = useState('demandas');
   const [projects, setProjects] = useState(() => loadFromStorage(PROJECTS_KEY, PROJECTS));
   const [expandedAccount, setExpandedAccount] = useState(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [editingClient, setEditingClient] = useState(null);
+  const [showMetaConfig, setShowMetaConfig] = useState(false);
+  const [metaConfigProject, setMetaConfigProject] = useState(null);
+  const [metaCreatorProject, setMetaCreatorProject] = useState(null);
   const [copiedLink, setCopiedLink] = useState(false);
-
-  // Seleciona primeiro cliente após carregar
-  React.useEffect(() => {
-    setSelectedClient(prev => prev ?? (clients[0] || null));
-  }, []); // eslint-disable-line
 
   // ── Persiste clientes e projetos automaticamente ──
   React.useEffect(() => {
@@ -212,11 +362,17 @@ const Clientes = ({ demandas = [] }) => {
   const clientProjects = selectedClient ? projects.filter(p => p.clientId === selectedClient.id) : [];
   const stats = getClientStats(clientProjects);
 
-  const handleAddClient = (name, avatarUrl) => {
-    const newClient = { id: uuidv4(), name, avatarUrl };
+  const handleAddClient = (clientData) => {
+    const newClient = { id: uuidv4(), ...clientData };
     setClients(prev => [...prev, newClient]);
     setSelectedClient(newClient);
     setShowNewClientModal(false);
+  };
+
+  const handleEditClient = (updatedData) => {
+    setClients(prev => prev.map(c => c.id === editingClient.id ? { ...c, ...updatedData } : c));
+    setSelectedClient(prev => ({ ...prev, ...updatedData }));
+    setEditingClient(null);
   };
 
   // ── CRUD: Projects ──
@@ -238,7 +394,7 @@ const Clientes = ({ demandas = [] }) => {
   };
 
   // ── CRUD: Tasks ──
-  const handleAddTask = (projectId, text, type = 'new') => {
+  const handleAddTask = (projectId, text, type = 'new', priority = 'normal', dueDate = null) => {
     let subtasks = [];
     if (type === 'recurrent') {
       try {
@@ -251,8 +407,28 @@ const Clientes = ({ demandas = [] }) => {
     }
     setProjects(prev => prev.map(p =>
       p.id === projectId
-        ? { ...p, tasks: [...p.tasks, { id: uuidv4(), text, completed: false, type, subtasks }] }
+        ? { ...p, tasks: [...p.tasks, { id: uuidv4(), text, completed: false, type, subtasks, priority, dueDate }] }
         : p
+    ));
+  };
+
+  const handleUpdateTask = (projectId, taskId, field, value) => {
+    setProjects(prev => prev.map(p =>
+      p.id === projectId
+        ? { ...p, tasks: p.tasks.map(t => t.id === taskId ? { ...t, [field]: value } : t) }
+        : p
+    ));
+  };
+
+  const handleReorderTasks = (projectId, newTasks) => {
+    setProjects(prev => prev.map(p =>
+      p.id === projectId ? { ...p, tasks: newTasks } : p
+    ));
+  };
+
+  const handleUpdateProject = (projectId, updates) => {
+    setProjects(prev => prev.map(p =>
+      p.id === projectId ? { ...p, ...updates } : p
     ));
   };
 
@@ -387,7 +563,16 @@ const Clientes = ({ demandas = [] }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
               <img src={selectedClient.avatarUrl} alt={selectedClient.name} style={{ width: '56px', height: '56px', borderRadius: '50%' }} />
               <div>
-                <h2 style={{ fontSize: '22px', fontWeight: '700', marginBottom: '4px' }}>{selectedClient.name}</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <h2 style={{ fontSize: '22px', fontWeight: '700' }}>{selectedClient.name}</h2>
+                  <button 
+                    onClick={() => setEditingClient(selectedClient)}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}
+                    title="Editar Cliente"
+                  >
+                    <Cog size={16} />
+                  </button>
+                </div>
                 <div style={{ display: 'flex', gap: '16px' }}>
                   <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <FolderOpen size={12} /> {clientProjects.length} projetos
@@ -417,9 +602,47 @@ const Clientes = ({ demandas = [] }) => {
               >
                 {copiedLink === selectedClient.id ? <><CheckCircle2 size={13} /> Copiado!</> : <>🔗 Copiar Link</>}
               </button>
+              {/* Botão configurar Meta */}
+              {(() => {
+                const hasSaved = !!localStorage.getItem(`meta_defaults_${selectedClient.id}`);
+                return (
+                  <button
+                    onClick={() => setShowMetaConfig(true)}
+                    title="Configurar BM, conta e página padrão para este cliente"
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: hasSaved ? '#10b981' : 'var(--primary)', background: hasSaved ? 'rgba(16,185,129,0.08)' : 'var(--primary-light)', padding: '7px 14px', borderRadius: '8px', border: `1px solid ${hasSaved ? 'rgba(16,185,129,0.3)' : 'rgba(139,92,246,0.2)'}`, cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s' }}
+                  >
+                    <Database size={13} /> {hasSaved ? 'Meta ✓' : 'Config. Meta'}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
+
+        {/* Modal configuração Meta — nível cliente */}
+        {showMetaConfig && (
+          <MetaConfigModal client={selectedClient} onClose={() => setShowMetaConfig(false)} />
+        )}
+
+        {/* Modal configuração Meta — nível projeto */}
+        {metaConfigProject && (
+          <MetaConfigModal
+            client={selectedClient}
+            storageKey={`meta_defaults_proj_${metaConfigProject.id}`}
+            label={metaConfigProject.name}
+            onClose={() => setMetaConfigProject(null)}
+          />
+        )}
+
+        {/* Meta Ad Creator — aberto via botão do projeto */}
+        {metaCreatorProject && (
+          <MetaAdCreator
+            card={{ clientId: selectedClient.id, title: metaCreatorProject.name }}
+            projectId={metaCreatorProject.id}
+            onClose={() => setMetaCreatorProject(null)}
+            onComplete={() => setMetaCreatorProject(null)}
+          />
+        )}
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
@@ -571,6 +794,11 @@ const Clientes = ({ demandas = [] }) => {
                         onAddTask={handleAddTask}
                         onDeleteProject={handleDeleteProject}
                         onRenameProject={handleRenameProject}
+                        onUpdateTask={handleUpdateTask}
+                        onReorderTasks={handleReorderTasks}
+                        onUpdateProject={handleUpdateProject}
+                        onOpenMeta={(p) => setMetaCreatorProject(p)}
+                        onConfigMeta={(p) => setMetaConfigProject(p)}
                       />
                     ))}
                   </div>
@@ -739,9 +967,16 @@ const Clientes = ({ demandas = [] }) => {
         />
       )}
       {showNewClientModal && (
-        <NewClientModal
+        <ClientModal
           onConfirm={handleAddClient}
           onCancel={() => setShowNewClientModal(false)}
+        />
+      )}
+      {editingClient && (
+        <ClientModal
+          initialData={editingClient}
+          onConfirm={handleEditClient}
+          onCancel={() => setEditingClient(null)}
         />
       )}
     </div>

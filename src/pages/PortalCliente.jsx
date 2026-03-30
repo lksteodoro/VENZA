@@ -5,11 +5,11 @@ import { CLIENTS, PROJECTS } from '../data/mockData';
 import { v4 as uuidv4 } from 'uuid';
 
 const TIPOS = [
-  'Arte para Post',
-  'Alteração de Campanha',
-  'Criação de Copy',
-  'Relatório de Performance',
-  'Solicitação de Reunião',
+  'Nova Campanha',
+  'Otimização de Campanha',
+  'Criação de Criativos/Copy',
+  'Relatório',
+  'Reunião/Alinhamento',
   'Outro',
 ];
 
@@ -52,6 +52,10 @@ const PortalCliente = ({ demandas = [], onSubmitDemanda }) => {
     justificativaUrgencia: '',
     projeto: '',
     arquivo: '',
+    plataforma: 'Meta Ads',
+    objetivo: 'Mensagens no WhatsApp',
+    orcamento: '',
+    publico: '',
   });
 
   // ── Cliente não encontrado ──
@@ -85,12 +89,16 @@ const PortalCliente = ({ demandas = [], onSubmitDemanda }) => {
       justificativaUrgencia: form.justificativaUrgencia,
       projetoId: form.projeto || (clientProjects[0]?.id ?? null),
       arquivo: form.arquivo,
+      plataforma: form.plataforma,
+      objetivo: form.objetivo,
+      orcamento: form.orcamento,
+      publico: form.publico,
       status: 'pendente',
       criadoEm: new Date().toLocaleDateString('pt-BR'),
     };
     onSubmitDemanda(nova);
     setSubmitted(true);
-    setForm({ titulo: '', tipo: TIPOS[0], prioridade: 'normal', descricao: '', justificativaUrgencia: '', projeto: '', arquivo: '' });
+    setForm({ titulo: '', tipo: TIPOS[0], prioridade: 'normal', descricao: '', justificativaUrgencia: '', projeto: '', arquivo: '', plataforma: 'Meta Ads', objetivo: 'Mensagens no WhatsApp', orcamento: '', publico: '' });
     setTimeout(() => { setSubmitted(false); setView('historico'); }, 1800);
   };
 
@@ -102,23 +110,23 @@ const PortalCliente = ({ demandas = [], onSubmitDemanda }) => {
   };
 
   return (
-    <div style={{ minHeight: '100vh', width: '100vw', background: '#09090b', fontFamily: 'Inter, sans-serif', overflowY: 'auto' }}>
+    <div style={{ height: '100vh', width: '100vw', background: '#09090b', fontFamily: 'Inter, sans-serif', overflowY: 'auto', overflowX: 'hidden' }}>
 
       {/* ── Header do Portal ── */}
       <div style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%)', padding: '32px 40px', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', width: '300px', height: '300px', background: '#8b5cf6', borderRadius: '50%', filter: 'blur(100px)', opacity: 0.08, top: '-80px', right: '0' }} />
         <div style={{ maxWidth: '760px', margin: '0 auto', position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <img src={client.avatarUrl} alt={client.name} style={{ width: '56px', height: '56px', borderRadius: '50%', border: '2px solid rgba(139,92,246,0.4)' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
+            <img src={client.avatarUrl} alt={client.name} style={{ width: '72px', height: '72px', borderRadius: '50%', border: '2px solid rgba(139,92,246,0.4)' }} />
             <div>
               <p style={{ fontSize: '11px', fontWeight: '700', color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '4px' }}>PORTAL EXCLUSIVO</p>
-              <h1 style={{ fontSize: '24px', fontWeight: '800', color: '#f8fafc', marginBottom: '2px' }}>{client.name}</h1>
-              <p style={{ fontSize: '13px', color: '#94a3b8' }}>Envie suas solicitações e acompanhe o andamento.</p>
+              <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#f8fafc', marginBottom: '4px' }}>{client.name}</h1>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Envie suas solicitações e acompanhe o andamento.</p>
             </div>
           </div>
 
           {/* Resumo rápido */}
-          <div style={{ display: 'flex', gap: '12px', marginTop: '24px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '32px', flexWrap: 'wrap' }}>
             {[
               { label: 'Enviadas', count: clientDemandas.length, color: '#8b5cf6' },
               { label: 'Em Andamento', count: clientDemandas.filter(d => d.status === 'andamento').length, color: '#f59e0b' },
@@ -136,7 +144,7 @@ const PortalCliente = ({ demandas = [], onSubmitDemanda }) => {
       {/* ── Corpo ── */}
       <div style={{ maxWidth: '760px', margin: '0 auto', padding: '32px 40px' }}>
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', background: '#121214', border: '1px solid #27272a', borderRadius: '10px', padding: '4px', width: 'fit-content' }}>
+        <div style={{ display: 'flex', gap: '4px', margin: '0 auto 24px', background: '#121214', border: '1px solid #27272a', borderRadius: '10px', padding: '4px', width: 'fit-content' }}>
           {[{ key: 'form', label: '+ Nova Demanda' }, { key: 'historico', label: 'Minhas Demandas' }].map(t => (
             <button key={t.key} onClick={() => setView(t.key)} style={{
               padding: '8px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', border: 'none', cursor: 'pointer',
@@ -188,6 +196,34 @@ const PortalCliente = ({ demandas = [], onSubmitDemanda }) => {
                       }}>{p.label}</button>
                     ))}
                   </div>
+                </div>
+              </div>
+
+              {/* Plataforma + Objetivo */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>PLATAFORMA</label>
+                  <select value={form.plataforma} onChange={e => handleChange('plataforma', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                    {['Meta Ads (Facebook/Instagram)', 'Google Ads', 'TikTok Ads', 'LinkedIn Ads', 'Outra'].map(t => <option key={t} value={t} style={{ background: '#09090b' }}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>OBJETIVO DA CAMPANHA</label>
+                  <select value={form.objetivo} onChange={e => handleChange('objetivo', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                    {['Mensagens no WhatsApp', 'Leads (Formulário)', 'Vendas (E-commerce)', 'Engajamento/Seguidores', 'Branding/Alcance', 'Outro'].map(t => <option key={t} value={t} style={{ background: '#09090b' }}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Orçamento + Público */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>ORÇAMENTO PREVISTO (Opcional)</label>
+                  <input value={form.orcamento} onChange={e => handleChange('orcamento', e.target.value)} placeholder="Ex: R$ 50,00/dia ou R$ 1.000 total" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>PÚBLICO-ALVO / REGIÃO (Opcional)</label>
+                  <input value={form.publico} onChange={e => handleChange('publico', e.target.value)} placeholder="Ex: Mulheres 25-45a, São Paulo" style={inputStyle} />
                 </div>
               </div>
 

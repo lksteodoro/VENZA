@@ -9,14 +9,8 @@ const TaskCard = ({ card, onEdit, onToggleCheck }) => {
   const totalCount = card.checklist.length;
   const progressPercent = totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
 
-  // Take first 2 numbers to display, show +X if more
-  const displayNumbers = [];
-  card.wabas.forEach(waba => {
-    waba.numbers.forEach(num => displayNumbers.push(num));
-  });
-  const maxDisplay = 2;
-  const numbersToShow = displayNumbers.slice(0, maxDisplay);
-  const extraCount = displayNumbers.length - maxDisplay;
+  const displayPlataforma = card.demandaPlataforma || 'N/A';
+  const displayOrcamento = card.demandaOrcamento || 'N/A';
 
   return (
     <div className={`task-card type-${card.type}`}>
@@ -42,14 +36,12 @@ const TaskCard = ({ card, onEdit, onToggleCheck }) => {
       </div>
 
       <div className="card-meta">
-        {numbersToShow.map((num, idx) => (
-          <div key={idx} className="meta-badge">
-            <Phone size={12} /> {num}
-          </div>
-        ))}
-        {extraCount > 0 && (
-          <div className="meta-badge">+{extraCount}</div>
-        )}
+        <div className="meta-badge" style={{ backgroundColor: 'rgba(139,92,246,0.1)', color: 'var(--primary)' }}>
+          {displayPlataforma}
+        </div>
+        <div className="meta-badge" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
+          {displayOrcamento}
+        </div>
         <div className="meta-badge time">
           <Clock size={12} /> {card.time}
         </div>

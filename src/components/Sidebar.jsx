@@ -1,19 +1,18 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Users, Settings, LayoutDashboard, Zap, BarChart2, MessageSquare } from 'lucide-react';
-import { CheckSquare } from 'lucide-react';
+import { Users, Settings, Inbox, CheckSquare, PlusCircle, LayoutDashboard, BarChart2 } from 'lucide-react';
+
 import '../App.css';
 
 const NAV_ITEMS = [
   { to: '/dashboard',    icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
-  { to: '/kanban',       icon: <CheckSquare size={18} />,     label: 'Kanban Ops' },
+  { to: '/demandas',     icon: <Inbox size={18} />,           label: 'Demandas' },
+  { to: '/metricas',     icon: <BarChart2 size={18} />,       label: 'Métricas' },
+  { to: '/kanban',       icon: <CheckSquare size={18} />,     label: 'Execução (Ads)' },
   { to: '/clientes',     icon: <Users size={18} />,           label: 'Clientes & Projetos' },
-  { to: '/portal',       icon: <MessageSquare size={18} />,   label: 'Portal do Cliente' },
-  { to: '/automacoes',   icon: <Zap size={18} />,             label: 'Automações' },
-  { to: '/analytics',    icon: <BarChart2 size={18} />,       label: 'Analytics & SLA' },
 ];
 
-const Sidebar = ({ onLogout }) => {
+const Sidebar = ({ onLogout, demandaBadge = 0, onOpenAdCreator }) => {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
@@ -31,9 +30,27 @@ const Sidebar = ({ onLogout }) => {
           <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             {item.icon}
             <span>{item.label}</span>
+            {item.to === '/demandas' && demandaBadge > 0 && (
+              <span style={{
+                marginLeft: 'auto', minWidth: '18px', height: '18px',
+                background: '#ef4444', color: 'white', fontSize: '10px',
+                fontWeight: '700', borderRadius: '9px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px'
+              }}>
+                {demandaBadge}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
+
+      <div style={{ margin: '16px', padding: '16px', borderRadius: '12px', background: 'linear-gradient(135deg, #1877F2, #0056d6)', color: 'white', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 16px rgba(24,119,242,0.3)' }}>
+        <h4 style={{ fontSize: '12px', fontWeight: '800', margin: 0 }}>Meta Ads</h4>
+        <p style={{ fontSize: '10px', opacity: 0.9, margin: 0, lineHeight: 1.3 }}>Suba anúncios rapidamente em lote.</p>
+        <button onClick={onOpenAdCreator} style={{ background: 'white', color: '#1877F2', border: 'none', borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', marginTop: '4px' }}>
+          <PlusCircle size={14} /> Novo Anúncio
+        </button>
+      </div>
 
       <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--border-light)' }}>
         <NavLink to="/configuracoes" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>

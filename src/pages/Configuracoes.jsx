@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Cog, Activity, ShieldCheck, RotateCcw, Save, Check, GripVertical, ChevronDown, Pencil } from 'lucide-react';
+import { Plus, Trash2, Cog, Activity, ShieldCheck, RotateCcw, Save, Check, GripVertical, ChevronDown, Pencil, Link as LinkIcon, Key, Loader2, AlertCircle, CheckCircle, Zap, ExternalLink } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { BASE_SUBTASKS } from '../data/mockData';
 
@@ -199,6 +199,9 @@ const TemplateRow = ({ item, index, total, onChangeText, onChangePhase, onDelete
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 const Configuracoes = () => {
+  const [activeTab, setActiveTab] = useState('checklist'); // 'checklist' ou 'integracoes'
+  
+  // Checklist State
   const [items, setItems] = useState(loadTemplate);
   const [newText, setNewText] = useState('');
   const [newPhase, setNewPhase] = useState('Criação');
@@ -207,10 +210,58 @@ const Configuracoes = () => {
   const dragFrom = useRef(null);
   const addInputRef = useRef();
 
+  // Integrations State
+  const [metaToken, setMetaToken] = useState(() => localStorage.getItem('meta_access_token') || '');
+  const [tokenSaved, setTokenSaved] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState(null); // { ok, user, businesses, adAccounts, error }
+
+  const META_API = 'https://graph.facebook.com/v21.0';
+
+  const handleTestConnection = async () => {
+    const token = metaToken.trim();
+    if (!token) { setTestResult({ ok: false, error: 'Cole o token antes de testar.' }); return; }
+
+    setTestLoading(true);
+    setTestResult(null);
+
+    try {
+      // 1. Validar token — quem sou eu?
+      const meRes = await fetch(`${META_API}/me?fields=id,name&access_token=${token}`);
+      const me = await meRes.json();
+      if (me.error) throw new Error(me.error.message);
+
+      // 2. Listar Business Managers
+      const bmRes = await fetch(`${META_API}/me/businesses?fields=id,name&limit=10&access_token=${token}`);
+      const bmData = await bmRes.json();
+      const businesses = bmData.data || [];
+
+      // 3. Listar contas de anúncio diretas do usuário (fallback se não tiver BM)
+      const accRes = await fetch(`${META_API}/me/adaccounts?fields=id,name,account_status,currency&limit=20&access_token=${token}`);
+      const accData = await accRes.json();
+      const adAccounts = (accData.data || []).map(a => ({
+        ...a,
+        status_label: a.account_status === 1 ? 'ATIVA' : a.account_status === 2 ? 'DESATIVADA' : `status ${a.account_status}`,
+      }));
+
+      setTestResult({ ok: true, user: me, businesses, adAccounts });
+    } catch (e) {
+      setTestResult({ ok: false, error: e.message });
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
   const handleSave = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+  };
+
+  const handleSaveToken = () => {
+    localStorage.setItem('meta_access_token', metaToken.trim());
+    setTokenSaved(true);
+    setTimeout(() => setTokenSaved(false), 2500);
   };
 
   const handleRestore = () => {
@@ -251,10 +302,33 @@ const Configuracoes = () => {
           <div>
             <h1 style={{ fontSize: '22px', fontWeight: '700', marginBottom: '5px' }}>Configurações</h1>
             <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-              Personalize o template usado ao criar tarefas do tipo <strong style={{ color: 'var(--primary)' }}>Com Checklist</strong> nos projetos de clientes.
+              Gerencie templates, regras e conexões com plataformas externas.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '10px', flexShrink: 0 }}>
+          
+          <div style={{
+            display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', 
+            borderRadius: '10px', padding: '4px', gap: '4px'
+          }}>
+            <button 
+              onClick={() => setActiveTab('checklist')}
+              style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', border: 'none', cursor: 'pointer', background: activeTab === 'checklist' ? 'rgba(139,92,246,0.15)' : 'transparent', color: activeTab === 'checklist' ? 'var(--primary)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+            >
+              <ShieldCheck size={16} /> Templates
+            </button>
+            <button 
+              onClick={() => setActiveTab('integracoes')}
+              style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', border: 'none', cursor: 'pointer', background: activeTab === 'integracoes' ? 'rgba(139,92,246,0.15)' : 'transparent', color: activeTab === 'integracoes' ? 'var(--primary)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+            >
+              <LinkIcon size={16} /> Integrações (APIs)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {activeTab === 'checklist' ? (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
             <button onClick={handleRestore} className="btn-secondary" style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <RotateCcw size={14} /> Restaurar Padrão
             </button>
@@ -262,8 +336,6 @@ const Configuracoes = () => {
               {saved ? <><Check size={14} /> Salvo!</> : <><Save size={14} /> Salvar Template</>}
             </button>
           </div>
-        </div>
-      </div>
 
       {/* ── Stats ── */}
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -469,7 +541,7 @@ const Configuracoes = () => {
 
       {/* ── Info box ── */}
       <div style={{
-        padding: '14px 18px', borderRadius: '10px',
+        padding: '14px 18px', borderRadius: '10px', marginTop: '20px',
         backgroundColor: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.2)',
         fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.6'
       }}>
@@ -477,6 +549,151 @@ const Configuracoes = () => {
         Este template é aplicado automaticamente ao criar uma tarefa do tipo <strong style={{ color: 'var(--text-main)' }}>Com Checklist</strong>.
         Clique em <strong style={{ color: 'var(--text-main)' }}>Salvar Template</strong> para confirmar. Tarefas já criadas <em>não são afetadas</em>.
       </div>
+      </>
+      ) : (
+        /* ── Integrações ── */
+        <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '800px' }}>
+          
+          <div style={{
+            backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)',
+            borderRadius: '12px', overflow: 'hidden'
+          }}>
+            <div style={{ padding: '20px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
+                <Key size={20} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-main)' }}>Meta Ads (Graph API)</h2>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Conecte o seu System User Token para permitir a publicação nativa de campanhas.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Access Token Permanente
+                </label>
+                <input 
+                  type="password" 
+                  value={metaToken}
+                  onChange={e => setMetaToken(e.target.value)}
+                  placeholder="EAAI..."
+                  style={{
+                    width: '100%', padding: '12px 14px', fontSize: '14px', fontFamily: 'monospace',
+                    background: 'var(--bg-app)', border: '1px solid var(--border-main)',
+                    borderRadius: '8px', color: 'var(--text-main)', outline: 'none'
+                  }}
+                  onFocus={e => e.target.style.borderColor = 'var(--primary)'}
+                  onBlur={e => e.target.style.borderColor = 'var(--border-main)'}
+                />
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: '1.5' }}>
+                  Gere este token no App Dashboard da Meta &gt; System Users &gt; Generate New Token.
+                  Certifique-se de habilitar as permissões <strong>ads_management</strong> e <strong>ads_read</strong>.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={handleTestConnection}
+                  disabled={testLoading || !metaToken.trim()}
+                  style={{ padding: '10px 20px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '8px', border: '1px solid var(--border-main)', background: 'var(--bg-app)', color: 'var(--text-main)', cursor: testLoading || !metaToken.trim() ? 'not-allowed' : 'pointer', opacity: !metaToken.trim() ? 0.5 : 1, fontWeight: '600' }}
+                >
+                  {testLoading ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Testando...</> : <><Zap size={15} /> Testar Conexão</>}
+                </button>
+                <button
+                  onClick={handleSaveToken}
+                  className="btn-primary"
+                  style={{ padding: '10px 24px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  {tokenSaved ? <><Check size={16} /> Token Salvo</> : <><Save size={16} /> Salvar Token</>}
+                </button>
+              </div>
+
+              {/* ── Resultado do Teste ── */}
+              {testResult && (
+                <div style={{ marginTop: '4px', borderRadius: '10px', border: `1px solid ${testResult.ok ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, background: testResult.ok ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)', overflow: 'hidden' }}>
+
+                  {/* Header do resultado */}
+                  <div style={{ padding: '12px 16px', borderBottom: `1px solid ${testResult.ok ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {testResult.ok
+                      ? <CheckCircle size={18} color="#10b981" />
+                      : <AlertCircle size={18} color="#ef4444" />}
+                    <span style={{ fontWeight: '700', fontSize: '14px', color: testResult.ok ? '#10b981' : '#ef4444' }}>
+                      {testResult.ok ? `Conectado como: ${testResult.user.name} (ID: ${testResult.user.id})` : 'Erro na conexão'}
+                    </span>
+                  </div>
+
+                  {testResult.ok ? (
+                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                      {/* Business Managers */}
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                          Business Managers encontradas ({testResult.businesses.length})
+                        </div>
+                        {testResult.businesses.length === 0 ? (
+                          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nenhuma BM associada a este token.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {testResult.businesses.map(bm => (
+                              <div key={bm.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                                <div>
+                                  <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>{bm.name}</span>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px', fontFamily: 'monospace' }}>{bm.id}</span>
+                                </div>
+                                <a href={`https://business.facebook.com/overview/?business_id=${bm.id}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', textDecoration: 'none' }}>
+                                  <ExternalLink size={12} /> Abrir
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Contas de Anúncio */}
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                          Contas de Anúncio ({testResult.adAccounts.length})
+                        </div>
+                        {testResult.adAccounts.length === 0 ? (
+                          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nenhuma conta de anúncio encontrada. Verifique as permissões do token.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {testResult.adAccounts.map(acc => (
+                              <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                                <div>
+                                  <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>{acc.name}</span>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px', fontFamily: 'monospace' }}>{acc.id}</span>
+                                </div>
+                                <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '20px', background: acc.account_status === 1 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: acc.account_status === 1 ? '#10b981' : '#ef4444' }}>
+                                  {acc.status_label}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Permissões detectadas */}
+                      <div style={{ padding: '10px 14px', background: 'rgba(16,185,129,0.06)', borderRadius: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Token válido. Salve-o para sair do Modo Demo e publicar campanhas reais.
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: '14px 16px', fontSize: '13px', color: '#ef4444', fontFamily: 'monospace' }}>
+                      {testResult.error}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+
+        </div>
+      )}
 
     </div>
   );
