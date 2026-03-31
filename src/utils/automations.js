@@ -20,7 +20,7 @@ export const saveEvoGroups   = (grps) => localStorage.setItem(STORAGE_KEYS.group
 export const saveAutomations = (list) => localStorage.setItem(STORAGE_KEYS.automations, JSON.stringify(list));
 
 /** Substitui variáveis na mensagem */
-const processTemplate = (template, { clientName, cardName, columnName, projectName }) => {
+const processTemplate = (template, { clientName, cardName, columnName, projectName, saldo, limite }) => {
   const now   = new Date();
   const data  = now.toLocaleDateString('pt-BR');
   const hora  = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -29,6 +29,8 @@ const processTemplate = (template, { clientName, cardName, columnName, projectNa
     .replace(/\{\{card\}\}/g,     cardName     || '')
     .replace(/\{\{coluna\}\}/g,   columnName   || '')
     .replace(/\{\{projeto\}\}/g,  projectName  || '')
+    .replace(/\{\{saldo\}\}/g,    saldo        || '')
+    .replace(/\{\{limite\}\}/g,   limite       || '')
     .replace(/\{\{data\}\}/g,     data)
     .replace(/\{\{hora\}\}/g,     hora);
 };
@@ -38,7 +40,7 @@ const processTemplate = (template, { clientName, cardName, columnName, projectNa
  * @param {string} trigger   - ID do gatilho (ex: 'concluido', 'aprovacao')
  * @param {object} context   - { clientId, cardName, columnName }
  */
-export const fireAutomation = async (trigger, { clientId, cardName, columnName, projectName }) => {
+export const fireAutomation = async (trigger, { clientId, cardName, columnName, projectName, saldo, limite }) => {
   try {
     const automations = loadAutomations();
     const matching    = automations.filter(a => a.ativa && a.trigger === trigger);
@@ -58,7 +60,7 @@ export const fireAutomation = async (trigger, { clientId, cardName, columnName, 
 
     let updated = [...automations];
     for (const auto of matching) {
-      const text = processTemplate(auto.message, { clientName, cardName, columnName, projectName });
+      const text = processTemplate(auto.message, { clientName, cardName, columnName, projectName, saldo, limite });
       await fetch(url, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', apikey: config.apiKey },

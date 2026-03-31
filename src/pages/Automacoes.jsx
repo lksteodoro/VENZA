@@ -2,14 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Zap, MessageSquare, Settings, Users,
   ToggleLeft, ToggleRight, Check, Save, Loader2,
-  CheckCircle, AlertCircle,
+  CheckCircle, AlertCircle, TrendingDown,
 } from 'lucide-react';
 import { CLIENTS } from '../data/mockData';
 import {
   loadEvoConfig, saveEvoConfig,
   loadEvoGroups, saveEvoGroups,
   loadAutomations, saveAutomations,
+  fireAutomation,
 } from '../utils/automations';
+import {
+  checkAccountBalance, loadBalanceAlerts, saveBalanceAlerts, fmtCurrency,
+} from '../utils/metaBalance';
 
 // ─── Gatilhos disponíveis ──────────────────────────────────────────────────────
 export const TRIGGER_GROUPS = [
@@ -19,6 +23,12 @@ export const TRIGGER_GROUPS = [
       { id: 'demanda_recebida', label: 'Demanda recebida pelo portal',           emoji: '📨', color: '#a78bfa', bg: 'rgba(167,139,250,0.1)' },
       { id: 'demanda_interna',  label: 'Nova demanda criada pela agência',        emoji: '📝', color: '#f97316', bg: 'rgba(249,115,22,0.1)'  },
       { id: 'demanda_aprovada', label: 'Demanda aprovada (portal ou interna)',    emoji: '🎯', color: '#10b981', bg: 'rgba(16,185,129,0.1)'  },
+    ],
+  },
+  {
+    label: 'Meta Ads',
+    triggers: [
+      { id: 'saldo_baixo', label: 'Saldo baixo na conta (pré-pago)', emoji: '⚠️', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
     ],
   },
   {
@@ -43,14 +53,27 @@ const DEFAULT_MSG = {
   andamento:        '🚀 *{{card}}* entrou em execução!\n\nOlá, {{cliente}}! Já estamos trabalhando nisso. Acompanhe as atualizações por aqui.\n_{{data}} às {{hora}}_',
   aprovacao:        '👀 *{{card}}* aguarda sua aprovação.\n\nOlá, {{cliente}}! Precisamos da sua avaliação para prosseguir. Por favor, revise e nos dê um retorno.\n_{{data}} às {{hora}}_',
   concluido:        '✅ *{{card}}* foi concluído!\n\nOlá, {{cliente}}! A entrega está pronta. Qualquer dúvida estamos à disposição. 🎉\n_{{data}} às {{hora}}_',
+  saldo_baixo:      '⚠️ *Alerta de Saldo Baixo — Meta Ads*\n\nOlá, {{cliente}}! O saldo da conta de anúncios está em *{{saldo}}*, abaixo do limite configurado de {{limite}}.\n\nPor favor, recarregue o saldo para evitar a pausa das campanhas. 🔴\n_{{data}} às {{hora}}_',
 };
 
 // ─── Variáveis disponíveis ────────────────────────────────────────────────────
-const VARS = ['{{cliente}}', '{{card}}', '{{projeto}}', '{{coluna}}', '{{data}}', '{{hora}}'];
+const VARS = ['{{cliente}}', '{{card}}', '{{projeto}}', '{{coluna}}', '{{saldo}}', '{{limite}}', '{{data}}', '{{hora}}'];
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const getClients = () => {
   try { return JSON.parse(localStorage.getItem('venza_clients')) || CLIENTS; } catch { return CLIENTS; }
+};
+
+// ─── Garante um slot de alerta de saldo por cliente ──────────────────────────
+const seedBalanceAlerts = (list) => {
+  const clients = getClients();
+  const result  = [...list];
+  clients.forEach(c => {
+    if (!result.find(a => a.clientId === c.id)) {
+      result.push({ clientId: c.id, enabled: false, threshold: 50, lastBalance: null, lastCheck: null, lastError: null, isPrepay: null, currency: 'BRL' });
+    }
+  });
+  return result;
 };
 
 // ─── Garante um slot por trigger na lista de automações ───────────────────────
@@ -187,6 +210,60 @@ const Automacoes = () => {
 
   const resetToDefault = (triggerId) => setDrafts(d => ({ ...d, [triggerId]: DEFAULT_MSG[triggerId] }));
 
+  // ── Balance alerts ──
+  const [balanceAlerts, setBalanceAlerts] = useState(() => seedBalanceAlerts(loadBalanceAlerts()));
+  const [checkingId,    setCheckingId]    = useState(null); // clientId being checked
+  const [checkingAll,   setCheckingAll]   = useState(false);
+
+  useEffect(() => { saveBalanceAlerts(balanceAlerts); }, [balanceAlerts]);
+
+  const updateAlert = (clientId, patch) =>
+    setBalanceAlerts(prev => prev.map(a => a.clientId === clientId ? { ...a, ...patch } : a));
+
+  const runCheck = async (clientId) => {
+    const alert = balanceAlerts.find(a => a.clientId === clientId);
+    if (!alert) return;
+    const token = localStorage.getItem('meta_access_token');
+    const saved = (() => { try { return JSON.parse(localStorage.getItem(`meta_defaults_${clientId}`)); } catch { return null; } })();
+    if (!token || !saved?.adAccountId) {
+      updateAlert(clientId, { lastError: 'Token ou conta Meta não configurados.', lastCheck: new Date().toLocaleString('pt-BR') });
+      return;
+    }
+    setCheckingId(clientId);
+    try {
+      const result = await checkAccountBalance(saved.adAccountId, token);
+      const now    = new Date().toLocaleString('pt-BR');
+      if (!result.isPrepay) {
+        updateAlert(clientId, { lastBalance: null, isPrepay: false, lastCheck: now, lastError: null });
+        return;
+      }
+      updateAlert(clientId, { lastBalance: result.balance, currency: result.currency, isPrepay: true, lastCheck: now, lastError: null });
+      if (alert.enabled && result.balance < (alert.threshold || 0)) {
+        const saldoFmt  = fmtCurrency(result.balance,          result.currency);
+        const limiteFmt = fmtCurrency(alert.threshold || 0,   result.currency);
+        await fireAutomation('saldo_baixo', {
+          clientId,
+          cardName:   saved.adAccountId,
+          columnName: 'Meta Ads',
+          saldo:      saldoFmt,
+          limite:     limiteFmt,
+        });
+      }
+    } catch (e) {
+      updateAlert(clientId, { lastError: e.message, lastCheck: new Date().toLocaleString('pt-BR') });
+    } finally {
+      setCheckingId(null);
+    }
+  };
+
+  const runCheckAll = async () => {
+    setCheckingAll(true);
+    for (const a of balanceAlerts.filter(a => a.enabled)) {
+      await runCheck(a.clientId);
+    }
+    setCheckingAll(false);
+  };
+
   const totalDisparos = automations.reduce((s, a) => s + (a.disparos || 0), 0);
 
   const tabBtn = (id, icon, label) => (
@@ -206,9 +283,10 @@ const Automacoes = () => {
           <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Envio automático de mensagens via WhatsApp (Evolution API) ao mover cards.</p>
         </div>
         <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '4px', gap: '4px' }}>
-          {tabBtn('regras',  <Zap size={15} />,         'Regras')}
-          {tabBtn('grupos',  <Users size={15} />,        'Grupos por Cliente')}
-          {tabBtn('api',     <Settings size={15} />,     'Config. API')}
+          {tabBtn('regras',  <Zap size={15} />,           'Regras')}
+          {tabBtn('grupos',  <Users size={15} />,          'Grupos por Cliente')}
+          {tabBtn('saldo',   <TrendingDown size={15} />,   'Saldo Meta')}
+          {tabBtn('api',     <Settings size={15} />,       'Config. API')}
         </div>
       </div>
 
@@ -346,6 +424,114 @@ const Automacoes = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── ABA: SALDO META ── */}
+      {tab === 'saldo' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '720px' }}>
+
+          {/* Info */}
+          <div style={{ padding: '13px 16px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+            <strong style={{ color: '#ef4444' }}>⚠️ Apenas contas pré-pagas (saldo).</strong> Contas com cartão de crédito não possuem saldo monitorável e serão sinalizadas como "não monitorável". A conta Meta e o token devem estar configurados em <strong style={{ color: 'var(--text-main)' }}>Configurações → Contas por Cliente</strong>.
+          </div>
+
+          {/* Verificar Todos */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={runCheckAll} disabled={checkingAll || balanceAlerts.every(a => !a.enabled)}
+              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 18px', borderRadius: '9px', border: 'none', background: '#ef4444', color: 'white', fontSize: '13px', fontWeight: '700', cursor: 'pointer', opacity: (checkingAll || balanceAlerts.every(a => !a.enabled)) ? 0.5 : 1 }}>
+              {checkingAll
+                ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Verificando...</>
+                : <><TrendingDown size={14} /> Verificar Todos Ativos</>}
+            </button>
+          </div>
+
+          {/* Per-client cards */}
+          {balanceAlerts.map(alert => {
+            const client   = clients.find(c => c.id === alert.clientId);
+            const saved    = (() => { try { return JSON.parse(localStorage.getItem(`meta_defaults_${alert.clientId}`)); } catch { return null; } })();
+            const hasAcct  = !!saved?.adAccountId;
+            const isChecking = checkingId === alert.clientId;
+            const notPrepay  = alert.lastCheck && alert.isPrepay === false;
+
+            return (
+              <div key={alert.clientId} style={{ background: 'var(--bg-surface)', border: `1.5px solid ${alert.enabled && !notPrepay ? 'rgba(239,68,68,0.3)' : 'var(--border-light)'}`, borderRadius: '14px', overflow: 'hidden', opacity: notPrepay ? 0.5 : 1 }}>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', borderBottom: '1px solid var(--border-light)', background: alert.enabled && !notPrepay ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
+                  {client?.avatarUrl
+                    ? <img src={client.avatarUrl} alt={client.name} style={{ width: '36px', height: '36px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} onError={e => { e.target.style.display = 'none'; }} />
+                    : <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--bg-app)', flexShrink: 0 }} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)' }}>{client?.name || alert.clientId}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      {hasAcct
+                        ? <span style={{ fontFamily: 'monospace' }}>{saved.adAccountId}</span>
+                        : <span style={{ color: '#f59e0b' }}>⚠ Conta Meta não configurada</span>}
+                      {notPrepay && <span style={{ color: '#ef4444', fontWeight: '700' }}>· Cartão de crédito — não monitorável</span>}
+                      {alert.isPrepay === true && <span style={{ color: '#10b981', fontWeight: '700' }}>· Pré-pago ✓</span>}
+                    </div>
+                  </div>
+                  {/* Toggle */}
+                  <button onClick={() => updateAlert(alert.clientId, { enabled: !alert.enabled })}
+                    disabled={!hasAcct || notPrepay}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '8px', border: `1px solid ${alert.enabled ? 'rgba(239,68,68,0.4)' : 'var(--border-main)'}`, background: alert.enabled ? 'rgba(239,68,68,0.08)' : 'var(--bg-app)', color: alert.enabled ? '#ef4444' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: (!hasAcct || notPrepay) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: (!hasAcct || notPrepay) ? 0.4 : 1 }}>
+                    {alert.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                    {alert.enabled ? 'Ativo' : 'Inativo'}
+                  </button>
+                </div>
+
+                {/* Config row */}
+                <div style={{ padding: '14px 18px', display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  {/* Threshold */}
+                  <div style={{ flex: 1, minWidth: '160px' }}>
+                    <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Notificar se saldo abaixo de ({alert.currency || 'BRL'})
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
+                      <span style={{ padding: '9px 10px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRight: 'none', borderRadius: '8px 0 0 8px', fontSize: '13px', color: 'var(--text-muted)', fontWeight: '700' }}>R$</span>
+                      <input
+                        type="number" min="0" step="10"
+                        value={alert.threshold ?? 50}
+                        onChange={e => updateAlert(alert.clientId, { threshold: parseFloat(e.target.value) || 0 })}
+                        style={{ width: '100px', padding: '9px 12px', fontSize: '13px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '0 8px 8px 0', color: 'var(--text-main)', outline: 'none' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Last check info */}
+                  <div style={{ flex: 2, minWidth: '200px' }}>
+                    {alert.lastCheck && (
+                      <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-app)', fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                        {alert.lastError
+                          ? <span style={{ color: '#ef4444' }}>❌ {alert.lastError}</span>
+                          : alert.isPrepay === false
+                            ? <span>💳 Cartão de crédito — saldo não monitorável</span>
+                            : <span>
+                                Saldo atual: <strong style={{ color: alert.lastBalance < (alert.threshold || 0) ? '#ef4444' : '#10b981', fontSize: '13px' }}>
+                                  {fmtCurrency(alert.lastBalance ?? 0, alert.currency)}
+                                </strong>
+                                {alert.lastBalance < (alert.threshold || 0) && <span style={{ color: '#ef4444', marginLeft: '6px' }}>⚠ Abaixo do limite!</span>}
+                              </span>}
+                        <div style={{ fontSize: '10px', marginTop: '3px' }}>Última verificação: {alert.lastCheck}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Check button */}
+                  <button onClick={() => runCheck(alert.clientId)} disabled={isChecking || !hasAcct}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--border-main)', background: 'var(--bg-app)', color: 'var(--text-main)', fontSize: '12px', fontWeight: '700', cursor: (!hasAcct || isChecking) ? 'not-allowed' : 'pointer', opacity: !hasAcct ? 0.4 : 1, whiteSpace: 'nowrap' }}>
+                    {isChecking
+                      ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Verificando...</>
+                      : <><TrendingDown size={13} /> Verificar</>}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          <div style={{ padding: '13px 16px', background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '10px', fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+            <strong style={{ color: 'var(--primary)' }}>Mensagem de alerta:</strong> Configure o texto da notificação na aba <strong style={{ color: 'var(--text-main)' }}>Regras</strong>, gatilho <em>Saldo baixo na conta (pré-pago)</em>. Use <code style={{ background: 'var(--bg-app)', padding: '1px 5px', borderRadius: '4px' }}>{'{{saldo}}'}</code> e <code style={{ background: 'var(--bg-app)', padding: '1px 5px', borderRadius: '4px' }}>{'{{limite}}'}</code> na mensagem.
+          </div>
         </div>
       )}
 

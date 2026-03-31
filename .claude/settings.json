@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx eslint src/components/MetaAdCreator.jsx --max-warnings=50)",
+      "Bash(grep -v \"//\")"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"page-content\" src/index.css src/App.css src/pages/*.jsx src/pages/*.css)",
+      "Bash(timeout 20 npx vite build)",
+      "Bash(npx vite build)",
+      "Bash(npm run build)",
+      "Bash(npx eslint src/components/MetaAdCreator.jsx --max-warnings=100)"
+    ]
+  }
+}
