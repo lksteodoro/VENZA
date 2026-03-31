@@ -3,6 +3,7 @@ import { BOARD_COLUMNS } from '../data/mockData';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import TaskCard from './TaskCard';
 import './Kanban.css';
+import { fireAutomation } from '../utils/automations';
 
 const KanbanBoard = ({ cards, setCards, updateCard, onEditCard }) => {
   const onDragEnd = (result) => {
@@ -16,14 +17,24 @@ const KanbanBoard = ({ cards, setCards, updateCard, onEditCard }) => {
     if (cardIndex === -1) return;
 
     const [movedCard] = newCards.splice(cardIndex, 1);
-    
+
     // Change column
     movedCard.columnId = destination.droppableId;
-    
-    // Insert at new position (very simplistic approach since cards are mostly just grouped by column)
+
+    // Insert at new position
     newCards.splice(destination.index, 0, movedCard);
 
     setCards(newCards);
+
+    // Dispara automação se a coluna mudou
+    if (destination.droppableId !== source.droppableId) {
+      const col = BOARD_COLUMNS.find(c => c.id === destination.droppableId);
+      fireAutomation(destination.droppableId, {
+        clientId:   movedCard.clientId,
+        cardName:   movedCard.title || movedCard.name || '',
+        columnName: col?.title || destination.droppableId,
+      });
+    }
   };
 
   return (

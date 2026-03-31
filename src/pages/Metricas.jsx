@@ -1,11 +1,24 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { CLIENTS } from '../data/mockData';
 import {
   BarChart2, RefreshCw, Loader2, AlertCircle, ChevronDown,
   Eye, MousePointer, DollarSign, Play, Image as ImageIcon,
-  TrendingUp, Users, ExternalLink, Settings
+  TrendingUp, Users, Instagram, Settings
 } from 'lucide-react';
 
 const META_API = 'https://graph.facebook.com/v25.0';
+
+// ─── Converte ID numérico do Instagram para shortcode (base64 Instagram) ───────
+const toIgShortcode = (mediaId) => {
+  const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let num = BigInt(mediaId);
+  let code = '';
+  while (num > 0n) {
+    code = ALPHA[Number(num % 64n)] + code;
+    num = num / 64n;
+  }
+  return code;
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n, decimals = 0) =>
@@ -146,9 +159,10 @@ const ExpandableText = ({ text }) => {
 };
 
 // ─── Card de criativo (agrupado) ──────────────────────────────────────────────
-const AdCard = ({ group }) => {
-  const [imgErr, setImgErr] = useState(false);
+const AdCard = ({ group, token }) => {
+  const [imgStage, setImgStage] = useState(0); // 0=hq, 1=fallback, 2=erro
   const [expanded, setExpanded] = useState(false);
+  const [loadingLink, setLoadingLink] = useState(false);
 
   const { name, firstAd, instances, campaigns, adsets, metrics } = group;
   const creative = firstAd.creative || {};
@@ -160,20 +174,45 @@ const AdCard = ({ group }) => {
 
   const isVideo = !!creative.video_id;
   const spec = creative.object_story_spec || {};
-  const thumbnail =
-    spec.link_data?.picture ||
-    spec.photo_data?.image_url ||
-    spec.video_data?.image_url ||
-    creative.image_url;
 
-  // Pega objetivo/otimização mais comum entre as instâncias
+  // Alta qualidade → fallback confiável (thumbnail_url é menor mas sempre carrega)
+  const hqThumb = spec.link_data?.picture || spec.photo_data?.image_url || creative.image_url;
+  const lqThumb = creative.thumbnail_url || spec.video_data?.image_url;
+  const thumbSrc = imgStage === 0 ? (hqThumb || lqThumb) : imgStage === 1 ? lqThumb : null;
+  const handleThumbError = () => {
+    if (imgStage === 0 && lqThumb) setImgStage(1);
+    else setImgStage(2);
+  };
+
   const firstCampaign = instances[0]?.campaign || {};
   const firstAdset = instances[0]?.adset || {};
   const objLabel = OBJECTIVE_LABEL[firstCampaign.objective] || firstCampaign.objective || '—';
   const optLabel = OPT_LABEL[firstAdset.optimization_goal] || firstAdset.optimization_goal || '—';
 
-  const managerIds = instances.map(a => a.id).join(',');
-  const adManagerUrl = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${firstAd.account_id}&selected_ad_ids=${managerIds}`;
+  // Link Instagram: usa o effective_instagram_story_id se disponível,
+  // caso contrário busca via API de preview do Meta
+  const igStoryId = creative.effective_instagram_story_id;
+  const instagramUrl = igStoryId
+    ? `https://www.instagram.com/p/${toIgShortcode(igStoryId)}/#advertiser`
+    : null;
+
+  const openPreview = async (e) => {
+    e.stopPropagation();
+    if (instagramUrl) { window.open(instagramUrl, '_blank'); return; }
+    setLoadingLink(true);
+    try {
+      const res = await fetch(`${META_API}/${firstAd.id}/previews?ad_format=INSTAGRAM_STANDARD&access_token=${token}`);
+      const data = await res.json();
+      const body = data.data?.[0]?.body || '';
+      // Extrai o src do iframe retornado pela API
+      const match = body.match(/src="([^"]+)"/);
+      if (match?.[1]) {
+        window.open(match[1].replace(/&amp;/g, '&'), '_blank');
+      }
+    } catch (_) { /* silencioso */ } finally {
+      setLoadingLink(false);
+    }
+  };
 
   return (
     <div style={{
@@ -186,11 +225,12 @@ const AdCard = ({ group }) => {
     >
       {/* Thumbnail */}
       <div style={{ position: 'relative', width: '100%', paddingTop: '100%', background: 'var(--bg-app)', flexShrink: 0 }}>
-        {thumbnail && !imgErr ? (
+        {thumbSrc ? (
           <img
-            src={thumbnail}
+            key={thumbSrc}
+            src={thumbSrc}
             alt={name}
-            onError={() => setImgErr(true)}
+            onError={handleThumbError}
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
           />
         ) : (
@@ -215,17 +255,17 @@ const AdCard = ({ group }) => {
             </span>
           )}
         </div>
-        {/* Link externo */}
-        <a
-          href={adManagerUrl} target="_blank" rel="noreferrer"
-          onClick={e => e.stopPropagation()}
-          style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: '6px', padding: '5px', display: 'flex', backdropFilter: 'blur(4px)', textDecoration: 'none', transition: 'background 0.15s' }}
-          title="Abrir no Gerenciador de Anúncios"
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.8)'}
+        {/* Preview Instagram */}
+        <button
+          onClick={openPreview}
+          disabled={loadingLink}
+          style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.55)', color: '#fff', borderRadius: '6px', padding: '5px', display: 'flex', backdropFilter: 'blur(4px)', border: 'none', cursor: loadingLink ? 'wait' : 'pointer', transition: 'background 0.15s' }}
+          title="Ver no Instagram"
+          onMouseEnter={e => { if (!loadingLink) e.currentTarget.style.background = 'rgba(225,48,108,0.85)'; }}
           onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0.55)'}
         >
-          <ExternalLink size={13} />
-        </a>
+          {loadingLink ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Instagram size={13} />}
+        </button>
       </div>
 
       {/* Body */}
@@ -327,6 +367,15 @@ const SkeletonCard = () => (
 const Metricas = () => {
   const token = localStorage.getItem('meta_access_token') || '';
 
+  // Carrega clientes do localStorage (mesma fonte que a página Clientes)
+  const clients = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('venza_clients')) || CLIENTS; }
+    catch { return CLIENTS; }
+  }, []);
+
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const pendingAccountRef = useRef('');
+
   const [bms, setBms] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [selectedBm, setSelectedBm] = useState('');
@@ -338,6 +387,27 @@ const Metricas = () => {
   const [loadingAds, setLoadingAds] = useState(false);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+
+  // ── Aplica config salva ao selecionar cliente ─────────────────────────────
+  const applyClientDefaults = useCallback((clientId) => {
+    setSelectedClientId(clientId);
+    if (!clientId) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`meta_defaults_${clientId}`) || 'null');
+      if (!saved?.bmId) return;
+      pendingAccountRef.current = saved.adAccountId || '';
+      if (saved.bmId === selectedBm) {
+        // BM já selecionada — aplica conta direto se já carregada
+        setAccounts(prev => {
+          const match = prev.find(a => a.id === saved.adAccountId);
+          if (match) { setSelectedAccount(match.id); pendingAccountRef.current = ''; }
+          return prev;
+        });
+      } else {
+        setSelectedBm(saved.bmId);
+      }
+    } catch {}
+  }, [selectedBm]);
 
   // ── Carregar BMs ──────────────────────────────────────────────────────────
   const loadBms = useCallback(async () => {
@@ -374,6 +444,11 @@ const Metricas = () => {
         if (data.error) throw new Error(data.error.message);
         const list = (data.data || []).filter(a => a.account_status === 1);
         setAccounts(list);
+        if (pendingAccountRef.current) {
+          const match = list.find(a => a.id === pendingAccountRef.current);
+          if (match) { setSelectedAccount(match.id); pendingAccountRef.current = ''; return; }
+          pendingAccountRef.current = '';
+        }
         if (list.length === 1) setSelectedAccount(list[0].id);
       } catch (e) {
         setError(`Erro ao carregar contas: ${e.message}`);
@@ -392,7 +467,7 @@ const Metricas = () => {
     try {
       const fields = [
         'id', 'name', 'status', 'effective_status', 'account_id',
-        'creative{id,name,title,body,image_url,video_id,effective_object_story_id,object_story_spec{link_data{message,picture,image_hash},photo_data{image_url,image_hash},video_data{image_url}}}',
+        'creative{id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,effective_instagram_story_id,object_story_spec{link_data{message,picture,image_hash},photo_data{image_url,image_hash},video_data{image_url,video_id}}}',
         'adset{id,name,daily_budget,optimization_goal,status}',
         'campaign{id,name,objective,status}',
         'insights{spend,impressions,clicks,ctr,cpm,reach}',
@@ -544,6 +619,19 @@ const Metricas = () => {
           Filtrar por:
         </div>
 
+        {/* Cliente */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', paddingLeft: '2px' }}>Cliente</span>
+          <StyledSelect
+            value={selectedClientId}
+            onChange={applyClientDefaults}
+            placeholder="Selecionar cliente"
+            options={clients.map(c => ({ value: c.id, label: c.name }))}
+          />
+        </div>
+
+        <div style={{ width: '1px', height: '36px', background: 'var(--border-light)', alignSelf: 'flex-end', marginBottom: '2px' }} />
+
         {/* BM */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', paddingLeft: '2px' }}>Business Manager</span>
@@ -654,7 +742,7 @@ const Metricas = () => {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
-          {groupedAds.map(group => <AdCard key={group.name} group={group} />)}
+          {groupedAds.map(group => <AdCard key={group.name} group={group} token={token} />)}
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Inbox, X, CheckCircle2, XCircle, ExternalLink, AlertTriangle, FileText } from 'lucide-react';
+import { Inbox, X, CheckCircle2, XCircle, ExternalLink, AlertTriangle, FileText, Plus } from 'lucide-react';
 import { CLIENTS } from '../data/mockData';
+import { v4 as uuidv4 } from 'uuid';
 
 const PRIORIDADE_COLOR = {
   urgente: '#ef4444',
@@ -127,11 +128,93 @@ const BriefingModal = ({ demanda, onClose }) => {
   );
 };
 
-const Demandas = ({ demandas = [], onApprove, onReject }) => {
+const TIPOS = ['Nova Campanha', 'Ajuste de Campanha', 'Criativo', 'Relatório', 'Outro'];
+const PLATAFORMAS = ['Meta Ads', 'Google Ads', 'TikTok Ads', 'Outro'];
+
+const NovaDemandaModal = ({ clients, onSave, onClose }) => {
+  const [form, setForm] = useState({
+    clientId: '', titulo: '', tipo: 'Nova Campanha', prioridade: 'normal',
+    plataforma: 'Meta Ads', descricao: '', projeto: '',
+  });
+  const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const canSave = form.clientId && form.titulo.trim();
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '20px' }}>
+      <div style={{ background: 'var(--bg-surface)', borderRadius: '16px', width: '100%', maxWidth: '520px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.5)' }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Plus size={16} color="var(--primary)" /> Nova Demanda Interna
+          </h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={18} /></button>
+        </div>
+        <div style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Cliente */}
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cliente *</label>
+            <select value={form.clientId} onChange={e => f('clientId', e.target.value)} style={{ width: '100%', padding: '10px 12px', fontSize: '13px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: form.clientId ? 'var(--text-main)' : 'var(--text-muted)', outline: 'none', boxSizing: 'border-box' }}>
+              <option value="">Selecione o cliente...</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          {/* Título */}
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Título *</label>
+            <input value={form.titulo} onChange={e => f('titulo', e.target.value)} placeholder="Ex: Campanha Black Friday" style={{ width: '100%', padding: '10px 12px', fontSize: '13px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+          {/* Projeto */}
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Projeto (opcional)</label>
+            <input value={form.projeto} onChange={e => f('projeto', e.target.value)} placeholder="Ex: Lançamento Verão 2025" style={{ width: '100%', padding: '10px 12px', fontSize: '13px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+          {/* Tipo + Prioridade */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tipo</label>
+              <select value={form.tipo} onChange={e => f('tipo', e.target.value)} style={{ width: '100%', padding: '10px 12px', fontSize: '13px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none' }}>
+                {TIPOS.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Prioridade</label>
+              <select value={form.prioridade} onChange={e => f('prioridade', e.target.value)} style={{ width: '100%', padding: '10px 12px', fontSize: '13px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none' }}>
+                <option value="normal">Normal</option>
+                <option value="alta">Alta</option>
+                <option value="urgente">Urgente</option>
+              </select>
+            </div>
+          </div>
+          {/* Plataforma */}
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Plataforma</label>
+            <select value={form.plataforma} onChange={e => f('plataforma', e.target.value)} style={{ width: '100%', padding: '10px 12px', fontSize: '13px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none' }}>
+              {PLATAFORMAS.map(p => <option key={p}>{p}</option>)}
+            </select>
+          </div>
+          {/* Descrição */}
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Descrição</label>
+            <textarea value={form.descricao} onChange={e => f('descricao', e.target.value)} rows={3} placeholder="Descreva o que precisa ser feito..." style={{ width: '100%', padding: '10px 12px', fontSize: '13px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: '1.5' }} />
+          </div>
+        </div>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border-light)', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '9px 20px', borderRadius: '8px', border: '1px solid var(--border-main)', background: 'transparent', color: 'var(--text-main)', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>Cancelar</button>
+          <button onClick={() => canSave && onSave(form)} disabled={!canSave}
+            style={{ padding: '9px 20px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', fontSize: '13px', fontWeight: '700', cursor: canSave ? 'pointer' : 'not-allowed', opacity: canSave ? 1 : 0.5 }}>
+            Criar Demanda
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Demandas = ({ demandas = [], onApprove, onReject, onSubmitDemanda }) => {
   const [statusFilter, setStatusFilter] = useState('pendente');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [briefingModal, setBriefingModal] = useState(null);
   const [approvedId, setApprovedId] = useState(null);
+  const [novaDemandaOpen, setNovaDemandaOpen] = useState(false);
 
   // Resolve clients from localStorage (fallback to mockData)
   const storedClients = (() => {
@@ -140,6 +223,26 @@ const Demandas = ({ demandas = [], onApprove, onReject }) => {
   const allClients = storedClients.length ? storedClients : CLIENTS;
 
   const getClient = (clientId) => allClients.find(c => c.id === clientId);
+
+  const handleSaveInterna = (form) => {
+    const client = getClient(form.clientId);
+    const demanda = {
+      id: uuidv4(),
+      clientId: form.clientId,
+      clientName: client?.name || form.clientId,
+      titulo: form.titulo.trim(),
+      tipo: form.tipo,
+      prioridade: form.prioridade,
+      descricao: form.descricao,
+      plataforma: form.plataforma,
+      projeto: form.projeto,
+      status: 'pendente',
+      fromPortal: false,
+      criadoEm: new Date().toLocaleDateString('pt-BR'),
+    };
+    onSubmitDemanda?.(demanda);
+    setNovaDemandaOpen(false);
+  };
 
   const filtered = demandas
     .filter(d => d.status === statusFilter)
@@ -176,6 +279,11 @@ const Demandas = ({ demandas = [], onApprove, onReject }) => {
           </p>
         </div>
 
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={() => setNovaDemandaOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 16px', borderRadius: '9px', border: 'none', background: 'var(--primary)', color: 'white', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <Plus size={14} /> Nova Demanda
+        </button>
         {/* Priority filter */}
         <div style={{ display: 'flex', gap: '6px' }}>
           {[{ key: 'all', label: 'Todas' }, { key: 'urgente', label: 'Urgente' }, { key: 'alta', label: 'Alta' }, { key: 'normal', label: 'Normal' }].map(p => (
@@ -193,6 +301,7 @@ const Demandas = ({ demandas = [], onApprove, onReject }) => {
               {p.label}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
@@ -361,6 +470,10 @@ const Demandas = ({ demandas = [], onApprove, onReject }) => {
 
       {briefingModal && (
         <BriefingModal demanda={briefingModal} onClose={() => setBriefingModal(null)} />
+      )}
+
+      {novaDemandaOpen && (
+        <NovaDemandaModal clients={allClients} onSave={handleSaveInterna} onClose={() => setNovaDemandaOpen(false)} />
       )}
     </div>
   );

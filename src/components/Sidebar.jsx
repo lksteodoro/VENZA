@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Users, Settings, Inbox, CheckSquare, PlusCircle, LayoutDashboard, BarChart2 } from 'lucide-react';
+import { Users, Settings, Inbox, CheckSquare, PlusCircle, LayoutDashboard, BarChart2, Zap } from 'lucide-react';
 
 import '../App.css';
 
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: '/metricas',     icon: <BarChart2 size={18} />,       label: 'Métricas' },
   { to: '/kanban',       icon: <CheckSquare size={18} />,     label: 'Execução (Ads)' },
   { to: '/clientes',     icon: <Users size={18} />,           label: 'Clientes & Projetos' },
+  { to: '/automacoes',   icon: <Zap size={18} />,             label: 'Automações' },
 ];
 
 const Sidebar = ({ onLogout, demandaBadge = 0, onOpenAdCreator }) => {

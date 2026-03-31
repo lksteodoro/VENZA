@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Cog, Activity, ShieldCheck, RotateCcw, Save, Check, GripVertical, ChevronDown, Pencil, Link as LinkIcon, Key, Loader2, AlertCircle, CheckCircle, Zap, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, Cog, Activity, ShieldCheck, RotateCcw, Save, Check, GripVertical, ChevronDown, Pencil, Link as LinkIcon, Key, Loader2, AlertCircle, CheckCircle, Zap, ExternalLink, Users, Building2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { BASE_SUBTASKS } from '../data/mockData';
+import { BASE_SUBTASKS, CLIENTS } from '../data/mockData';
+
+const META_API_CFG = 'https://graph.facebook.com/v25.0';
 
 const STORAGE_KEY = 'crm_checklist_template';
 const PHASES = ['Criação', 'Otimização', 'Verificação'];
@@ -214,7 +216,22 @@ const Configuracoes = () => {
   const [metaToken, setMetaToken] = useState(() => localStorage.getItem('meta_access_token') || '');
   const [tokenSaved, setTokenSaved] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
-  const [testResult, setTestResult] = useState(null); // { ok, user, businesses, adAccounts, error }
+  const [testResult, setTestResult] = useState(null);
+
+  // Clientes tab state
+  const [cfgClients] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('venza_clients')) || CLIENTS; } catch { return CLIENTS; }
+  });
+  const [cfgExpandedId, setCfgExpandedId] = useState(null);
+  const [cfgBms, setCfgBms] = useState([]);
+  const [cfgLoadingBms, setCfgLoadingBms] = useState(false);
+  const [cfgBmId, setCfgBmId] = useState('');
+  const [cfgAccounts, setCfgAccounts] = useState([]);
+  const [cfgLoadingAccounts, setCfgLoadingAccounts] = useState(false);
+  const [cfgAccountId, setCfgAccountId] = useState('');
+  const [cfgSavedId, setCfgSavedId] = useState(null);
+
+  const cfgToken = metaToken.trim() || localStorage.getItem('meta_access_token') || '';
 
   const META_API = 'https://graph.facebook.com/v21.0';
 
@@ -250,6 +267,57 @@ const Configuracoes = () => {
     } finally {
       setTestLoading(false);
     }
+  };
+
+  // ── Handlers da aba Clientes ─────────────────────────────────────────────
+  const openClientConfig = async (clientId) => {
+    if (cfgExpandedId === clientId) { setCfgExpandedId(null); return; }
+    setCfgExpandedId(clientId);
+    setCfgAccounts([]);
+    // Carrega config salva
+    try {
+      const saved = JSON.parse(localStorage.getItem(`meta_defaults_${clientId}`) || 'null');
+      setCfgBmId(saved?.bmId || '');
+      setCfgAccountId(saved?.adAccountId || '');
+    } catch { setCfgBmId(''); setCfgAccountId(''); }
+    // Carrega BMs se ainda não foram carregadas
+    if (cfgBms.length === 0 && cfgToken) {
+      setCfgLoadingBms(true);
+      try {
+        const res = await fetch(`${META_API_CFG}/me/businesses?fields=id,name&limit=25&access_token=${cfgToken}`);
+        const data = await res.json();
+        if (!data.error) setCfgBms(data.data || []);
+      } catch {} finally { setCfgLoadingBms(false); }
+    }
+  };
+
+  useEffect(() => {
+    if (!cfgBmId || !cfgToken) { setCfgAccounts([]); return; }
+    setCfgLoadingAccounts(true);
+    fetch(`${META_API_CFG}/${cfgBmId}/owned_ad_accounts?fields=id,name,account_status&limit=50&access_token=${cfgToken}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.error) setCfgAccounts((data.data || []).filter(a => a.account_status === 1));
+      })
+      .catch(() => {})
+      .finally(() => setCfgLoadingAccounts(false));
+  }, [cfgBmId, cfgToken]);
+
+  const saveClientConfig = (clientId) => {
+    if (!cfgBmId || !cfgAccountId) return;
+    localStorage.setItem(`meta_defaults_${clientId}`, JSON.stringify({ bmId: cfgBmId, adAccountId: cfgAccountId }));
+    setCfgSavedId(clientId);
+    setTimeout(() => setCfgSavedId(null), 2500);
+  };
+
+  const clearClientConfig = (clientId) => {
+    localStorage.removeItem(`meta_defaults_${clientId}`);
+    if (cfgExpandedId === clientId) { setCfgBmId(''); setCfgAccountId(''); }
+    setCfgSavedId(null);
+  };
+
+  const getClientSaved = (clientId) => {
+    try { return JSON.parse(localStorage.getItem(`meta_defaults_${clientId}`) || 'null'); } catch { return null; }
   };
 
   const handleSave = () => {
@@ -316,11 +384,17 @@ const Configuracoes = () => {
             >
               <ShieldCheck size={16} /> Templates
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('integracoes')}
               style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', border: 'none', cursor: 'pointer', background: activeTab === 'integracoes' ? 'rgba(139,92,246,0.15)' : 'transparent', color: activeTab === 'integracoes' ? 'var(--primary)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
             >
               <LinkIcon size={16} /> Integrações (APIs)
+            </button>
+            <button
+              onClick={() => setActiveTab('clientes')}
+              style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', border: 'none', cursor: 'pointer', background: activeTab === 'clientes' ? 'rgba(139,92,246,0.15)' : 'transparent', color: activeTab === 'clientes' ? 'var(--primary)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+            >
+              <Users size={16} /> Contas por Cliente
             </button>
           </div>
         </div>
@@ -692,6 +766,131 @@ const Configuracoes = () => {
           </div>
           <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
 
+        </div>
+      )}
+
+      {/* ── Aba Clientes ── */}
+      {activeTab === 'clientes' && (
+        <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '800px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+            <Building2 size={16} color="var(--primary)" />
+            <div>
+              <p style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>Contas de Anúncio por Cliente</p>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Configure a BM e conta padrão de cada cliente. Será carregado automaticamente em Métricas e ao criar anúncios.</p>
+            </div>
+          </div>
+
+          {!cfgToken && (
+            <div style={{ padding: '14px 18px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '10px', fontSize: '13px', color: 'var(--text-muted)' }}>
+              <AlertCircle size={14} style={{ display: 'inline', marginRight: '6px', color: '#f59e0b', verticalAlign: 'middle' }} />
+              Configure o <strong style={{ color: 'var(--text-main)' }}>Access Token</strong> na aba Integrações antes de vincular contas.
+            </div>
+          )}
+
+          {cfgClients.map(client => {
+            const saved = getClientSaved(client.id);
+            const isExpanded = cfgExpandedId === client.id;
+            const justSaved = cfgSavedId === client.id;
+            const bmName = saved ? (cfgBms.find(b => b.id === saved.bmId)?.name || saved.bmId) : null;
+            const accName = saved ? (cfgAccounts.find(a => a.id === saved.adAccountId)?.name || saved.adAccountId) : null;
+
+            return (
+              <div key={client.id} style={{ background: 'var(--bg-surface)', border: `1px solid ${isExpanded ? 'rgba(139,92,246,0.35)' : 'var(--border-light)'}`, borderRadius: '12px', overflow: 'hidden', transition: 'border-color 0.2s' }}>
+                {/* Row header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px' }}>
+                  <img src={client.avatarUrl} alt={client.name} style={{ width: '38px', height: '38px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} onError={e => { e.target.style.display = 'none'; }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>{client.name}</p>
+                    {saved ? (
+                      <p style={{ fontSize: '11px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <CheckCircle size={10} /> Configurado
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Não configurado</p>
+                    )}
+                  </div>
+                  {saved && (
+                    <button onClick={() => clearClientConfig(client.id)} title="Remover configuração" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px', display: 'flex', opacity: 0.6 }}>
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => openClientConfig(client.id)}
+                    disabled={!cfgToken}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '8px', border: `1px solid ${isExpanded ? 'var(--primary)' : 'var(--border-main)'}`, background: isExpanded ? 'rgba(139,92,246,0.1)' : 'var(--bg-app)', color: isExpanded ? 'var(--primary)' : 'var(--text-main)', fontSize: '12px', fontWeight: '700', cursor: cfgToken ? 'pointer' : 'not-allowed', opacity: cfgToken ? 1 : 0.4 }}
+                  >
+                    {isExpanded ? <ChevronDown size={13} style={{ transform: 'rotate(180deg)' }} /> : <ChevronDown size={13} />}
+                    {isExpanded ? 'Fechar' : (saved ? 'Editar' : 'Configurar')}
+                  </button>
+                </div>
+
+                {/* Expanded panel */}
+                {isExpanded && (
+                  <div style={{ borderTop: '1px solid var(--border-light)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--bg-app)' }}>
+                    {/* BM */}
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Business Manager</label>
+                      {cfgLoadingBms ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Carregando BMs...</div>
+                      ) : cfgBms.length === 0 ? (
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nenhuma BM encontrada para este token.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {cfgBms.map(bm => (
+                            <button key={bm.id} onClick={() => { setCfgBmId(bm.id); setCfgAccountId(''); }}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${cfgBmId === bm.id ? 'var(--primary)' : 'var(--border-light)'}`, background: cfgBmId === bm.id ? 'rgba(139,92,246,0.08)' : 'var(--bg-surface)', cursor: 'pointer', textAlign: 'left' }}>
+                              <div>
+                                <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>{bm.name}</p>
+                                <p style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{bm.id}</p>
+                              </div>
+                              {cfgBmId === bm.id && <Check size={14} color="var(--primary)" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Conta */}
+                    {cfgBmId && (
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Conta de Anúncio</label>
+                        {cfgLoadingAccounts ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Carregando contas...</div>
+                        ) : cfgAccounts.length === 0 ? (
+                          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nenhuma conta ativa nesta BM.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {cfgAccounts.map(acc => (
+                              <button key={acc.id} onClick={() => setCfgAccountId(acc.id)}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${cfgAccountId === acc.id ? '#10b981' : 'var(--border-light)'}`, background: cfgAccountId === acc.id ? 'rgba(16,185,129,0.07)' : 'var(--bg-surface)', cursor: 'pointer', textAlign: 'left' }}>
+                                <div>
+                                  <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>{acc.name}</p>
+                                  <p style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{acc.id}</p>
+                                </div>
+                                {cfgAccountId === acc.id && <Check size={14} color="#10b981" />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Botão salvar */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => saveClientConfig(client.id)}
+                        disabled={!cfgBmId || !cfgAccountId}
+                        className="btn-primary"
+                        style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', opacity: (!cfgBmId || !cfgAccountId) ? 0.5 : 1, cursor: (!cfgBmId || !cfgAccountId) ? 'not-allowed' : 'pointer' }}
+                      >
+                        {justSaved ? <><Check size={14} /> Salvo!</> : <><Save size={14} /> Salvar para {client.name}</>}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

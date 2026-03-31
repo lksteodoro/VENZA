@@ -121,6 +121,43 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
     setDefaultsSaved(true);
     setTimeout(() => setDefaultsSaved(false), 2000);
   };
+
+  // ─── Presets de configuração (BM + Conta + Página) ────────────────────────────
+  const [presets, setPresets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('meta_account_presets')) || []; } catch { return []; }
+  });
+  const [savePresetName, setSavePresetName] = useState('');
+  const [showSavePreset, setShowSavePreset] = useState(false);
+  const pendingPresetRef = useRef(null);
+
+  const applyPreset = (preset) => {
+    if (accountData.bmId === preset.bmId) {
+      setAccountData(a => ({ ...a, adAccountId: preset.adAccountId, pageId: preset.pageId }));
+    } else {
+      pendingPresetRef.current = preset;
+      setAccountData({ bmId: preset.bmId, adAccountId: '', pageId: '' });
+    }
+  };
+
+  const savePreset = () => {
+    if (!savePresetName.trim()) return;
+    const bmName = bms.find(b => b.id === accountData.bmId)?.name || accountData.bmId;
+    const adAccountName = adAccounts.find(a => a.id === accountData.adAccountId)?.name || accountData.adAccountId;
+    const pageName = apiData.pages.find(p => p.id === accountData.pageId)?.name || accountData.pageId;
+    const newPreset = { id: uuidv4(), name: savePresetName.trim(), bmId: accountData.bmId, bmName, adAccountId: accountData.adAccountId, adAccountName, pageId: accountData.pageId, pageName };
+    const updated = [...presets, newPreset];
+    setPresets(updated);
+    localStorage.setItem('meta_account_presets', JSON.stringify(updated));
+    setSavePresetName('');
+    setShowSavePreset(false);
+  };
+
+  const deletePreset = (id) => {
+    const updated = presets.filter(p => p.id !== id);
+    setPresets(updated);
+    localStorage.setItem('meta_account_presets', JSON.stringify(updated));
+  };
+
   const [adAccounts, setAdAccounts] = useState([]);
   const [allRawAccounts, setAllRawAccounts] = useState([]);
 
@@ -159,16 +196,28 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
   useEffect(() => {
     const bmId = accountData.bmId;
     if (!bmId) { setAdAccounts([]); return; }
-    setAccountData(a => ({ ...a, adAccountId: '' }));
+    const pending = pendingPresetRef.current;
+    const isApplyingPreset = pending && pending.bmId === bmId;
+    if (!isApplyingPreset) {
+      setAccountData(a => ({ ...a, adAccountId: '', pageId: '' }));
+    }
     const token = localStorage.getItem('meta_access_token');
     if (!token) {
       setAdAccounts(MOCK_BM_DATA.accounts[bmId] || []);
+      if (isApplyingPreset) {
+        setAccountData(a => ({ ...a, adAccountId: pending.adAccountId, pageId: pending.pageId }));
+        pendingPresetRef.current = null;
+      }
       return;
     }
     const filtered = allRawAccounts
       .filter(acc => bmId === '__direct__' ? !acc.business : acc.business?.id === bmId)
       .map(acc => ({ id: acc.id, name: acc.name, status: acc.account_status }));
     setAdAccounts(filtered);
+    if (isApplyingPreset) {
+      setAccountData(a => ({ ...a, adAccountId: pending.adAccountId, pageId: pending.pageId }));
+      pendingPresetRef.current = null;
+    }
   }, [accountData.bmId, allRawAccounts]);
 
   const [apiData, setApiData] = useState({ campaigns: [], pages: [], igs: [], pixels: [] });
@@ -348,65 +397,83 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
   const [forceMessagesDest, setForceMessagesDest] = useState(false);
   const [leadDestType, setLeadDestType] = useState('INSTANT_FORM');
   const [saleConversionEvent, setSaleConversionEvent] = useState('PURCHASE');
+  const [individualCopyMode, setIndividualCopyMode] = useState(false);
+  const [adCopyOverrides, setAdCopyOverrides] = useState({});   // { [fileId]: { primaryText?, title?, ... } }
+  const [activeCopyFileId, setActiveCopyFileId] = useState(null);
 
   // ─── Searchable Dropdown Customizado ──────────────────────────────────────────
-  const SearchableSelect = ({ items, value, onChange, placeholder, disabled }) => {
+  const SearchableSelect = ({ items: rawItems, options, value, onChange, placeholder, disabled, highlight }) => {
     const [search, setSearch] = useState('');
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
-    
+    // Normalize: options [{value, label}] → [{id, name}]; raw items passam direto
+    const items = options ? options.map(o => ({ id: o.value, name: o.label })) : (rawItems || []);
+    // Ocultar campo de busca em listas pequenas/estáticas
+    const showSearch = !options || items.length > 6;
+
     useEffect(() => {
       const clickOut = (e) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setIsOpen(false); };
       document.addEventListener('mousedown', clickOut);
       return () => document.removeEventListener('mousedown', clickOut);
     }, []);
 
-    const filtered = items.filter(i => (i.name || '').toLowerCase().includes(search.toLowerCase()) || (i.id || '').includes(search));
+    const filtered = showSearch
+      ? items.filter(i => (i.name || '').toLowerCase().includes(search.toLowerCase()) || (i.id || '').includes(search))
+      : items;
     const selected = items.find(i => i.id === value);
 
     const handleSelect = (id) => { onChange(id); setIsOpen(false); setSearch(''); };
 
+    const accentColor = highlight ? '#10b981' : '#1877F2';
+    const borderStyle = isOpen
+      ? `2px solid ${accentColor}`
+      : highlight && value
+        ? '1px solid #10b981'
+        : '1px solid var(--border-main)';
+    const bgStyle = highlight && value ? 'rgba(16,185,129,0.05)' : 'var(--bg-surface)';
+
     return (
       <div ref={dropdownRef} style={{ position: 'relative', width: '100%', opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
-        <div 
+        <div
           onClick={() => setIsOpen(!isOpen)}
-          style={{ padding: '12px 16px', borderRadius: '10px', border: isOpen ? '2px solid #1877F2' : '1px solid var(--border-main)', background: 'var(--bg-surface)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.15s' }}
+          style={{ padding: '12px 16px', borderRadius: '10px', border: borderStyle, background: bgStyle, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.15s' }}
         >
-          <span style={{ fontSize: '13px', color: selected ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: selected ? '700' : '500' }}>
-            {selected ? selected.name : placeholder}
+          <span style={{ fontSize: '13px', color: selected && selected.id !== '' ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: selected && selected.id !== '' ? '700' : '500' }}>
+            {selected ? selected.name : (placeholder || 'Selecione...')}
           </span>
-          <ChevronDown size={16} color={isOpen ? '#1877F2' : 'var(--text-muted)'} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
+          <ChevronDown size={16} color={isOpen ? accentColor : highlight && value ? '#10b981' : 'var(--text-muted)'} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: '0.2s', flexShrink: 0 }} />
         </div>
-        
+
         {isOpen && (
-          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-light)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,0.3)', zIndex: 10, overflow: 'hidden' }}>
-            <div style={{ padding: '8px', borderBottom: '1px solid var(--border-light)', background: 'var(--bg-surface)' }}>
-              <input 
-                type="text" autoFocus
-                placeholder="Filtrar por nome ou ID..." 
-                value={search} onChange={e => setSearch(e.target.value)}
-                style={{ width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--primary)', background: 'var(--bg-app)', color: 'var(--text-main)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} 
-              />
-            </div>
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-light)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,0.3)', zIndex: 50, overflow: 'hidden' }}>
+            {showSearch && (
+              <div style={{ padding: '8px', borderBottom: '1px solid var(--border-light)', background: 'var(--bg-surface)' }}>
+                <input
+                  type="text" autoFocus
+                  placeholder="Filtrar..."
+                  value={search} onChange={e => setSearch(e.target.value)}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '6px', border: `1px solid ${accentColor}`, background: 'var(--bg-app)', color: 'var(--text-main)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
             <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
               {filtered.map(item => {
                 const isItemSel = value === item.id;
-                // Desabilitar apenas contas inativas (status numérico ≠ 1) ou itens deletados/arquivados (string)
                 const isDisabled = item.status === 2 || item.status === 3 || item.status === 4 ||
                   item.status === 'DELETED' || item.status === 'ARCHIVED';
                 return (
-                  <div 
+                  <div
                     key={item.id}
                     onClick={() => !isDisabled && handleSelect(item.id)}
-                    style={{ padding: '12px 16px', cursor: isDisabled ? 'not-allowed' : 'pointer', display: 'flex', flexDirection: 'column', gap: '2px', background: isItemSel ? 'rgba(24,119,242,0.1)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.02)', opacity: isDisabled ? 0.4 : 1 }}
-                    onMouseEnter={e => !isDisabled && (e.currentTarget.style.background = isItemSel ? 'rgba(24,119,242,0.1)' : 'rgba(255,255,255,0.04)')}
-                    onMouseLeave={e => !isDisabled && (e.currentTarget.style.background = isItemSel ? 'rgba(24,119,242,0.1)' : 'transparent')}
+                    style={{ padding: options ? '10px 16px' : '12px 16px', cursor: isDisabled ? 'not-allowed' : 'pointer', display: 'flex', flexDirection: 'column', gap: '2px', background: isItemSel ? `rgba(${highlight ? '16,185,129' : '24,119,242'},0.1)` : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.02)', opacity: isDisabled ? 0.4 : 1 }}
+                    onMouseEnter={e => !isDisabled && (e.currentTarget.style.background = isItemSel ? `rgba(${highlight ? '16,185,129' : '24,119,242'},0.1)` : 'rgba(255,255,255,0.04)')}
+                    onMouseLeave={e => !isDisabled && (e.currentTarget.style.background = isItemSel ? `rgba(${highlight ? '16,185,129' : '24,119,242'},0.1)` : 'transparent')}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '13px', fontWeight: '700', color: isItemSel ? '#1877F2' : 'var(--text-main)' }}>{item.name}</span>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: isItemSel ? accentColor : item.id === '' ? 'var(--text-muted)' : 'var(--text-main)' }}>{item.name}</span>
                       {isDisabled && <span style={{ fontSize: '9px', fontWeight: '800', background: 'rgba(239,68,68,0.2)', color: '#ef4444', padding: '2px 6px', borderRadius: '4px' }}>INATIVA</span>}
                     </div>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>ID: {item.id}</span>
+                    {!options && item.id !== '' && <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>ID: {item.id}</span>}
                   </div>
                 );
               })}
@@ -556,7 +623,7 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
     const apiPost = async (endpoint, params) => {
       const body = new URLSearchParams({ ...params, access_token: token });
       const j = await fetchRetry(`${META_API}/${endpoint}`, { method: 'POST', body });
-      if (j?.error) throw new Error(`[${j.error.code}] ${j.error.message}`);
+      if (j?.error) throw new Error(`[${j.error.code}] ${j.error.error_user_msg || j.error.message}`);
       return j;
     };
 
@@ -660,11 +727,10 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
     });
 
     // ── object_story_spec por tipo de mídia ──────────────────────────────────
-    const buildStorySpec = ({ uploaded, thumbHash, isMsgDest, isWhatsApp, isMessenger, isLeadForm, finalUrl, pageId, igId }) => {
+    const buildStorySpec = ({ uploaded, thumbHash, isMsgDest, isWhatsApp, isMessenger, isLeadForm, isMultiDest, finalUrl, pageId, igId, copy }) => {
 
-      // ── page_welcome_message: obrigatório para Click to WhatsApp ─────────────
-      // Sem este campo, Meta retorna erro 2446493 "Invalid parameter"
-      const pageWelcomeMessage = isWhatsApp ? {
+      // ── page_welcome_message: obrigatório para Click to WhatsApp direto ───────
+      const pageWelcomeMessage = (isWhatsApp && !isMultiDest) ? {
         type: 'VISUAL_EDITOR',
         version: 2,
         landing_screen_type: 'welcome_message',
@@ -672,24 +738,25 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
         text_format: {
           customer_action_type: 'autofill_message',
           message: {
-            autofill_message: { content: adsData.whatsappWelcomeMsg || 'Olá! Gostaria de mais informações.' },
-            text: adsData.primaryText || 'Olá! Como posso ajudar?',
+            autofill_message: { content: copy.whatsappWelcomeMsg || 'Olá! Gostaria de mais informações.' },
+            text: copy.primaryText || 'Olá! Como posso ajudar?',
           },
         },
       } : undefined;
 
       // ── CTA por destino ──────────────────────────────────────────────────────
       let cta;
-      if (isWhatsApp) {
-        // NUNCA passar link externo — causa erro 2446493
+      if (isMultiDest && isMsgDest) {
+        cta = { type: 'MESSAGE_PAGE', value: {} };
+      } else if (isWhatsApp) {
         cta = { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } };
       } else if (isMessenger) {
         cta = { type: 'MESSAGE_PAGE', value: { app_destination: 'MESSENGER' } };
       } else if (isLeadForm) {
-        const ctaVal = adsData.leadFormId ? { lead_gen_form_id: adsData.leadFormId } : {};
+        const ctaVal = copy.leadFormId ? { lead_gen_form_id: copy.leadFormId } : {};
         cta = { type: 'SIGN_UP', value: ctaVal };
       } else {
-        cta = { type: adsData.cta, value: { link: finalUrl } };
+        cta = { type: copy.cta, value: { link: finalUrl } };
       }
 
       const spec = { page_id: pageId };
@@ -698,8 +765,8 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
       if (uploaded.type === 'VIDEO') {
         spec.video_data = {
           video_id: uploaded.id,
-          message: adsData.primaryText,
-          title: adsData.title,
+          message: copy.primaryText,
+          title: copy.title,
           call_to_action: cta,
           ...(thumbHash ? { image_hash: thumbHash } : {}),
           ...(pageWelcomeMessage ? { page_welcome_message: JSON.stringify(pageWelcomeMessage) } : {}),
@@ -708,9 +775,9 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
         spec.link_data = {
           image_hash: uploaded.hash,
           link: (isWhatsApp || isMessenger || isLeadForm) ? `https://www.facebook.com/${pageId}` : finalUrl,
-          message: adsData.primaryText,
-          name: adsData.title,
-          ...(adsData.description ? { description: adsData.description } : {}),
+          message: copy.primaryText,
+          name: copy.title,
+          ...(copy.description ? { description: copy.description } : {}),
           call_to_action: cta,
           ...(pageWelcomeMessage ? { page_welcome_message: JSON.stringify(pageWelcomeMessage) } : {}),
         };
@@ -800,9 +867,19 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
             adSetPayload.optimization_goal  = 'LEAD_GENERATION';
             adSetPayload.promoted_object    = JSON.stringify({ page_id: accountData.pageId });
           } else if (leadDestType === 'WEBSITE') {
+            // LEAD_GENERATION é inválido para WEBSITE — usar goal selecionado pelo usuário
+            // com fallback para LINK_CLICKS se ainda estiver no default de formulário
+            const VALID_WEBSITE_GOALS = ['LINK_CLICKS', 'LANDING_PAGE_VIEWS', 'OFFSITE_CONVERSIONS'];
+            const websiteGoal = VALID_WEBSITE_GOALS.includes(adSetData.optimizationGoal)
+              ? adSetData.optimizationGoal
+              : 'LINK_CLICKS';
             adSetPayload.destination_type   = 'WEBSITE';
-            adSetPayload.optimization_goal  = 'LEAD_GENERATION';
-            adSetPayload.promoted_object    = JSON.stringify({ page_id: accountData.pageId });
+            adSetPayload.optimization_goal  = websiteGoal;
+            if (websiteGoal === 'OFFSITE_CONVERSIONS' && adSetData.pixelId) {
+              adSetPayload.promoted_object = JSON.stringify({ pixel_id: adSetData.pixelId, custom_event_type: 'LEAD' });
+            } else {
+              adSetPayload.promoted_object = JSON.stringify({ page_id: accountData.pageId });
+            }
           } else if (leadDestType === 'WHATSAPP') {
             adSetPayload.destination_type   = 'WHATSAPP';
             adSetPayload.optimization_goal  = 'CONVERSATIONS';
@@ -826,20 +903,37 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
       }
 
       // ── Resolver destination_type + promoted_object do conjunto ─────────────
+      const KNOWN_DEST_TYPES = ['WEBSITE', 'WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT', 'ON_AD', 'APP', 'FACEBOOK'];
       let resolvedDestType = 'WEBSITE';
       let adSetPromotedObject = null;
+      let isMultiDestAdSet = false; // adsets de múltiplos destinos exigem degrees_of_freedom_spec no criativo
       if (campAction === 'existing' && adSetAction === 'existing' && allAdSetIds.length > 0) {
         const cached = existingAdSets.find(a => a.id === allAdSetIds[0]);
-        if (cached?.destination_type) {
-          resolvedDestType = cached.destination_type;
+        const cachedDestType = cached?.destination_type;
+        if (cachedDestType && KNOWN_DEST_TYPES.includes(cachedDestType)) {
+          resolvedDestType = cachedDestType;
         } else {
+          // destination_type indefinido ('UNDEFINED', null, etc.) → adset multi-destino
+          isMultiDestAdSet = true;
+          if (cachedDestType && !KNOWN_DEST_TYPES.includes(cachedDestType)) {
+            pushLog(`⚠️ destination_type "${cachedDestType}" — tratando como multi-destino`, 'loading');
+          }
           const dtRes = await fetch(`${META_API}/${allAdSetIds[0]}?fields=destination_type,promoted_object,optimization_goal&access_token=${token}`)
             .then(r => r.json()).catch(() => ({}));
-          resolvedDestType = dtRes.destination_type || 'WEBSITE';
+          const apiDest = dtRes.destination_type;
+          if (apiDest && KNOWN_DEST_TYPES.includes(apiDest)) {
+            resolvedDestType = apiDest;
+            isMultiDestAdSet = false; // API confirmou destino único
+          } else if (dtRes.optimization_goal === 'CONVERSATIONS') {
+            resolvedDestType = 'WHATSAPP';
+            pushLog(`⚠️ destination_type indefinido — inferido como WHATSAPP por optimization_goal=CONVERSATIONS`, 'loading');
+          } else {
+            resolvedDestType = 'WEBSITE';
+          }
           adSetPromotedObject = dtRes.promoted_object || null;
-          pushLog(`Tipo de destino detectado: ${resolvedDestType}`, 'loading');
         }
-        // Se não veio no cache, buscar promoted_object separado
+        pushLog(`Destino do conjunto: ${resolvedDestType}${isMultiDestAdSet ? ' (multi-destino)' : ''}`, 'success');
+        // Buscar promoted_object se ainda não foi obtido
         if (!adSetPromotedObject) {
           const poRes = await fetch(`${META_API}/${allAdSetIds[0]}?fields=promoted_object,optimization_goal&access_token=${token}`)
             .then(r => r.json()).catch(() => ({}));
@@ -898,7 +992,7 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
           saveCache();
           updateLogById(logId, 'success');
           setProgress(prev => Math.min(prev + Math.round(55 / mediaFiles.length), 80));
-          return { uploaded, thumbHash, adName };
+          return { uploaded, thumbHash, adName, fileId: media.id };
         } catch (e) {
           updateLogById(logId, 'error');
           throw e;
@@ -906,20 +1000,39 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
       }));
 
       // ── 4. Batch: criativos ──────────────────────────────────────────────────
-      // CORREÇÃO: sem degrees_of_freedom_spec (causa erros em vários objetivos)
-      // CORREÇÃO: body encodado manualmente via buildBatchItem
       pushLog(`Criando ${uploadResults.length} criativo(s) via Batch API...`);
-      const creativeBatch = uploadResults.map(({ uploaded, thumbHash, adName }) =>
-        buildBatchItem(`${adAccountId}/adcreatives`, {
+      const resolveCopy = (fileId) => individualCopyMode ? {
+        primaryText:      adCopyOverrides[fileId]?.primaryText      ?? adsData.primaryText,
+        title:            adCopyOverrides[fileId]?.title             ?? adsData.title,
+        description:      adCopyOverrides[fileId]?.description       ?? adsData.description,
+        cta:              adCopyOverrides[fileId]?.cta               ?? adsData.cta,
+        link:             adCopyOverrides[fileId]?.link              ?? adsData.link,
+        utmTags:          adCopyOverrides[fileId]?.utmTags           ?? adsData.utmTags,
+        whatsappWelcomeMsg: adCopyOverrides[fileId]?.whatsappWelcomeMsg ?? adsData.whatsappWelcomeMsg,
+        leadFormId:       adCopyOverrides[fileId]?.leadFormId        ?? adsData.leadFormId,
+      } : adsData;
+
+      const creativeBatch = uploadResults.map(({ uploaded, thumbHash, adName, fileId }) => {
+        const copy = resolveCopy(fileId);
+        const perFileFinalUrl = (isMsgDest || !needsUrl) ? '' : (copy.link + (copy.utmTags || ''));
+        const isMultiDest = isMultiDestAdSet;
+        const storySpec = JSON.stringify(buildStorySpec({
+          uploaded, thumbHash, isMsgDest, isWhatsApp, isMessenger, isLeadForm,
+          isMultiDest, finalUrl: perFileFinalUrl, pageId: accountData.pageId,
+          igId: adSetData.igId || '', copy,
+        }));
+        const creativeParams = isMultiDest ? {
           name: `Creative - ${adName}`,
-          object_story_spec: JSON.stringify(buildStorySpec({
-            uploaded, thumbHash, isMsgDest, isWhatsApp, isMessenger, isLeadForm, finalUrl,
-            pageId: accountData.pageId,
-            igId: adSetData.igId || '',
-          })),
+          object_story_spec: storySpec,
+          degrees_of_freedom_spec: JSON.stringify({ creative_features_spec: {} }),
           access_token: token,
-        })
-      );
+        } : {
+          name: `Creative - ${adName}`,
+          object_story_spec: storySpec,
+          access_token: token,
+        };
+        return buildBatchItem(`${adAccountId}/adcreatives`, creativeParams);
+      });
 
       const batchCreativeRes = await fetchRetry(`${META_API}/`, {
         method: 'POST',
@@ -978,7 +1091,9 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
           let body;
           try { body = JSON.parse(item.body || '{}'); } catch { body = {}; }
           if (item.code !== 200 || body.error) {
-            pushLog(`Anúncio falhou [HTTP ${item.code}]: ${body.error?.message || 'sem detalhe'} (sub: ${body.error?.error_subcode || 'N/A'})`, 'error');
+            const errDetail = body.error?.error_user_msg || body.error?.message || 'sem detalhe';
+            const errSub = body.error?.error_subcode || 'N/A';
+            pushLog(`Anúncio falhou [HTTP ${item.code}]: ${errDetail} (sub: ${errSub})`, 'error');
           } else { okCount++; }
         }
         updateLogById(adsLogId, okCount > 0 ? 'success' : 'error');
@@ -1105,14 +1220,19 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
     </div>
   );
 
-  const Select = ({ label, value, onChange, children, required, highlight }) => (
+  const SelectField = ({ label, value, onChange, required, highlight, options, items, placeholder }) => (
     <div>
-      <label style={{ fontSize: '11px', fontWeight: '700', color: highlight ? '#10b981' : 'var(--text-muted)', marginBottom: '6px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      <label style={{ fontSize: '11px', fontWeight: '700', color: highlight ? '#10b981' : 'var(--text-muted)', marginBottom: '8px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         {label}{required && <span style={{ color: '#ef4444', marginLeft: '3px' }}>*</span>}
       </label>
-      <select value={value} onChange={onChange} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${highlight ? '#10b981' : 'var(--border-main)'}`, background: highlight ? 'rgba(16,185,129,0.05)' : 'var(--bg-surface)', color: 'var(--text-main)', fontSize: '13px', outline: 'none' }}>
-        {children}
-      </select>
+      <SearchableSelect
+        items={items}
+        options={options}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder || 'Selecione...'}
+        highlight={highlight}
+      />
     </div>
   );
 
@@ -1205,6 +1325,71 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
                 {/* ── ABA 0: Conta & BM ── */}
                 {activeTab === 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+
+                    {/* ── Carregar por cliente ── */}
+                    {(() => {
+                      const configured = CLIENTS.filter(c => {
+                        try { return !!JSON.parse(localStorage.getItem(`meta_defaults_${c.id}`))?.bmId; } catch { return false; }
+                      });
+                      if (configured.length === 0) return null;
+                      return (
+                        <div style={{ marginBottom: '20px', padding: '14px 16px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                            Carregar conta por cliente
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {configured.map(client => {
+                              try {
+                                const saved = JSON.parse(localStorage.getItem(`meta_defaults_${client.id}`));
+                                const isActive = accountData.bmId === saved.bmId && accountData.adAccountId === saved.adAccountId;
+                                return (
+                                  <button
+                                    key={client.id}
+                                    onClick={() => applyPreset({ bmId: saved.bmId, adAccountId: saved.adAccountId, pageId: saved.pageId || '', bmName: '', adAccountName: '', pageName: '' })}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '7px 13px', borderRadius: '8px', border: `1px solid ${isActive ? '#10b981' : 'var(--border-main)'}`, background: isActive ? 'rgba(16,185,129,0.08)' : 'var(--bg-app)', color: isActive ? '#10b981' : 'var(--text-main)', fontSize: '12px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.15s' }}
+                                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.borderColor = 'var(--primary)'; }}
+                                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.borderColor = 'var(--border-main)'; }}
+                                  >
+                                    <img src={client.avatarUrl} alt="" style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover' }} onError={e => { e.target.style.display = 'none'; }} />
+                                    {client.name}
+                                    {isActive && <CheckCircle size={12} />}
+                                  </button>
+                                );
+                              } catch { return null; }
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* ── Presets salvos ── */}
+                    {presets.length > 0 && (
+                      <div style={{ marginBottom: '20px', padding: '14px 16px', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                          ★ Configurações Salvas
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {presets.map(p => (
+                            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--bg-app)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '2px' }}>{p.name}</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {p.bmName} → {p.adAccountName} → {p.pageName}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => applyPreset(p)}
+                                style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid rgba(24,119,242,0.4)', background: 'rgba(24,119,242,0.08)', color: '#1877F2', fontSize: '12px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >Aplicar</button>
+                              <button
+                                onClick={() => deletePreset(p.id)}
+                                style={{ padding: '5px 7px', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.3)', background: 'transparent', color: '#ef4444', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                              ><X size={12} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* ── ETAPA 1: Business Manager ── */}
                     {(() => {
@@ -1310,14 +1495,37 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
                             {' → '}
                             <strong style={{ color: 'var(--text-main)' }}>{apiData.pages.find(p => p.id === accountData.pageId)?.name || accountData.pageId}</strong>
                           </div>
-                          <button
-                            onClick={saveMetaDefaults}
-                            title={`Salvar como padrão (${metaStorageKey})`}
-                            style={{ padding: '5px 10px', borderRadius: '6px', border: `1px solid ${defaultsSaved ? 'rgba(16,185,129,0.8)' : 'rgba(16,185,129,0.4)'}`, background: defaultsSaved ? 'rgba(16,185,129,0.12)' : 'transparent', color: '#10b981', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
-                          >
-                            {defaultsSaved ? '✓ Salvo!' : '★ Salvar padrão'}
-                          </button>
+                          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                            <button
+                              onClick={saveMetaDefaults}
+                              title={`Salvar como padrão (${metaStorageKey})`}
+                              style={{ padding: '5px 10px', borderRadius: '6px', border: `1px solid ${defaultsSaved ? 'rgba(16,185,129,0.8)' : 'rgba(16,185,129,0.4)'}`, background: defaultsSaved ? 'rgba(16,185,129,0.12)' : 'transparent', color: '#10b981', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
+                            >
+                              {defaultsSaved ? '✓ Salvo!' : '★ Padrão'}
+                            </button>
+                            <button
+                              onClick={() => setShowSavePreset(v => !v)}
+                              style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid rgba(139,92,246,0.4)', background: showSavePreset ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.06)', color: 'var(--primary)', fontSize: '11px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              + Config
+                            </button>
+                          </div>
                         </div>
+                        {showSavePreset && (
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                            <input
+                              type="text"
+                              placeholder="Nome da configuração (ex: Instituto NTA — Principal)"
+                              value={savePresetName}
+                              onChange={e => setSavePresetName(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && savePreset()}
+                              autoFocus
+                              style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--primary)', background: 'var(--bg-surface)', color: 'var(--text-main)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
+                            />
+                            <button onClick={savePreset} disabled={!savePresetName.trim()} style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', background: savePresetName.trim() ? 'var(--primary)' : 'var(--border-main)', color: 'white', fontSize: '12px', fontWeight: '700', cursor: savePresetName.trim() ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' }}>Salvar</button>
+                            <button onClick={() => { setShowSavePreset(false); setSavePresetName(''); }} style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--border-main)', background: 'transparent', color: 'var(--text-muted)', fontSize: '12px', cursor: 'pointer' }}>✕</button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1436,9 +1644,15 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
                       <>
                         <Field label="Nome da Campanha" required value={campData.name} onChange={e => setCampData({ ...campData, name: e.target.value })} />
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                          <Select label="Objetivo Meta" value={campData.objective} onChange={e => { setCampData({ ...campData, objective: e.target.value }); setAdSetData(a => ({ ...a, optimizationGoal: OPTIMIZATION_GOALS[e.target.value]?.[0]?.value || 'OFFSITE_CONVERSIONS' })); }}>
-                            {OBJECTIVES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </Select>
+                          <SelectField label="Objetivo Meta" value={campData.objective} onChange={(newObj) => {
+                            const newLabel = OBJECTIVE_LABEL(newObj);
+                            const oldLabel = OBJECTIVE_LABEL(campData.objective);
+                            const updatedName = campData.name.includes(`[${oldLabel}]`)
+                              ? campData.name.replace(`[${oldLabel}]`, `[${newLabel}]`)
+                              : campData.name;
+                            setCampData({ ...campData, objective: newObj, name: updatedName });
+                            setAdSetData(a => ({ ...a, optimizationGoal: OPTIMIZATION_GOALS[newObj]?.[0]?.value || 'LINK_CLICKS' }));
+                          }} options={OBJECTIVES} />
                           <div>
                             <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '8px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Orçamento</label>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1490,10 +1704,10 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      <Select label="Conta Instagram (opcional)" value={adSetData.igId} onChange={e => setAdSetData({ ...adSetData, igId: e.target.value })}>
-                        <option value="">— Selecione —</option>
-                        {apiData.igs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </Select>
+                      <SelectField label="Conta Instagram (opcional)" value={adSetData.igId}
+                        onChange={val => setAdSetData({ ...adSetData, igId: val })}
+                        items={[{ id: '', name: '— Nenhuma —' }, ...apiData.igs]}
+                        placeholder="— Nenhuma —" />
                       <div />
                     </div>
 
@@ -1505,40 +1719,44 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
                         <>
                           {/* Tipo de captação — Leads */}
                           {effectiveObj === 'OUTCOME_LEADS' && (
-                            <Select label="Tipo de Captação de Lead" value={leadDestType} onChange={e => setLeadDestType(e.target.value)} highlight>
-                              <option value="INSTANT_FORM">Formulário Instantâneo (nativo Meta)</option>
-                              <option value="WEBSITE">Site / Landing Page</option>
-                              <option value="WHATSAPP">WhatsApp</option>
-                              <option value="MESSENGER">Messenger</option>
-                            </Select>
+                            <SelectField label="Tipo de Captação de Lead" value={leadDestType}
+                              onChange={val => setLeadDestType(val)} highlight
+                              options={[
+                                { value: 'INSTANT_FORM', label: 'Formulário Instantâneo (nativo Meta)' },
+                                { value: 'WEBSITE',      label: 'Site / Landing Page' },
+                                { value: 'WHATSAPP',     label: 'WhatsApp' },
+                                { value: 'MESSENGER',    label: 'Messenger' },
+                              ]} />
                           )}
                           {/* Evento de conversão — Vendas */}
                           {effectiveObj === 'OUTCOME_SALES' && (
-                            <Select label="Evento de Conversão" value={saleConversionEvent} onChange={e => setSaleConversionEvent(e.target.value)} highlight>
-                              <option value="PURCHASE">Compra (Purchase)</option>
-                              <option value="ADD_TO_CART">Adicionar ao Carrinho</option>
-                              <option value="INITIATE_CHECKOUT">Iniciar Checkout</option>
-                              <option value="COMPLETE_REGISTRATION">Cadastro Completo</option>
-                              <option value="LEAD">Lead</option>
-                              <option value="VIEW_CONTENT">Ver Conteúdo</option>
-                            </Select>
+                            <SelectField label="Evento de Conversão" value={saleConversionEvent}
+                              onChange={val => setSaleConversionEvent(val)} highlight
+                              options={[
+                                { value: 'PURCHASE',              label: 'Compra (Purchase)' },
+                                { value: 'ADD_TO_CART',           label: 'Adicionar ao Carrinho' },
+                                { value: 'INITIATE_CHECKOUT',     label: 'Iniciar Checkout' },
+                                { value: 'COMPLETE_REGISTRATION', label: 'Cadastro Completo' },
+                                { value: 'LEAD',                  label: 'Lead' },
+                                { value: 'VIEW_CONTENT',          label: 'Ver Conteúdo' },
+                              ]} />
                           )}
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                            <Select label="Otimização" value={adSetData.optimizationGoal} onChange={e => setAdSetData({ ...adSetData, optimizationGoal: e.target.value })}>
-                              {goalsForSelect.map(o => (
-                                <option key={o.value} value={o.value}>{o.label}</option>
-                              ))}
-                            </Select>
-                            <Select label="Posicionamentos" value={adSetData.placements} onChange={e => setAdSetData({ ...adSetData, placements: e.target.value })}>
-                              <option value="ADVANTAGE_PLUS">Advantage+ (Automático)</option>
-                              <option value="MANUAL">Manual</option>
-                            </Select>
+                            <SelectField label="Otimização" value={adSetData.optimizationGoal}
+                              onChange={val => setAdSetData({ ...adSetData, optimizationGoal: val })}
+                              options={goalsForSelect} />
+                            <SelectField label="Posicionamentos" value={adSetData.placements}
+                              onChange={val => setAdSetData({ ...adSetData, placements: val })}
+                              options={[
+                                { value: 'ADVANTAGE_PLUS', label: 'Advantage+ (Automático)' },
+                                { value: 'MANUAL',         label: 'Manual' },
+                              ]} />
                           </div>
                           {showPixel && (
-                            <Select label="📍 Pixel de Conversão" value={adSetData.pixelId} onChange={e => setAdSetData({ ...adSetData, pixelId: e.target.value })} highlight>
-                              <option value="">— Selecione o Pixel —</option>
-                              {apiData.pixels.map(p => <option key={p.id} value={p.id}>{p.name} (ID: {p.id})</option>)}
-                            </Select>
+                            <SelectField label="📍 Pixel de Conversão" value={adSetData.pixelId}
+                              onChange={val => setAdSetData({ ...adSetData, pixelId: val })} highlight
+                              items={[{ id: '', name: '— Selecione o Pixel —' }, ...apiData.pixels.map(p => ({ id: p.id, name: `${p.name} (ID: ${p.id})` }))]}
+                              placeholder="— Selecione o Pixel —" />
                           )}
                           {/* Aviso sem pixel — Vendas */}
                           {effectiveObj === 'OUTCOME_SALES' && !adSetData.pixelId && (
@@ -1614,17 +1832,109 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
                         </div>
                       )}
                       <div style={{ height: '1px', background: 'var(--border-light)' }} />
+
+                      {/* ── Toggle copy global / individual ── */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Copy dos Anúncios</span>
+                        <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '6px', padding: '2px' }}>
+                          {[['global', 'Global'], ['individual', 'Por Anúncio']].map(([v, l]) => (
+                            <button key={v} onClick={() => {
+                              const toIndividual = v === 'individual';
+                              setIndividualCopyMode(toIndividual);
+                              if (toIndividual && !activeCopyFileId && mediaFiles.length > 0) setActiveCopyFileId(mediaFiles[0].id);
+                            }} style={{ padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', border: 'none', background: (v === 'individual') === individualCopyMode ? 'var(--bg-app)' : 'transparent', color: (v === 'individual') === individualCopyMode ? 'var(--text-main)' : 'var(--text-muted)', cursor: 'pointer', boxShadow: (v === 'individual') === individualCopyMode ? '0 1px 4px rgba(0,0,0,0.15)' : 'none', transition: 'all 0.15s' }}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* ── Seletor de anúncio (modo individual) ── */}
+                      {individualCopyMode && mediaFiles.length > 0 && (() => {
+                        const activeId = activeCopyFileId || mediaFiles[0].id;
+                        const activeIdx = mediaFiles.findIndex(m => m.id === activeId);
+                        const overrides = adCopyOverrides[activeId] || {};
+                        const hasOverride = (f) => overrides[f] !== undefined;
+                        const getVal = (f) => hasOverride(f) ? overrides[f] : adsData[f];
+                        const setVal = (f, v) => setAdCopyOverrides(prev => ({ ...prev, [activeId]: { ...prev[activeId], [f]: v } }));
+                        const clearVal = (f) => setAdCopyOverrides(prev => { const c = { ...prev[activeId] }; delete c[f]; return { ...prev, [activeId]: c }; });
+
+                        return (
+                          <>
+                            {/* Tabs de seleção */}
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                              {mediaFiles.map((m, idx) => {
+                                const isActive = m.id === activeId;
+                                const hasAny = Object.keys(adCopyOverrides[m.id] || {}).length > 0;
+                                return (
+                                  <button key={m.id} onClick={() => setActiveCopyFileId(m.id)} style={{ position: 'relative', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border-light)'}`, background: isActive ? 'rgba(139,92,246,0.12)' : 'var(--bg-surface)', color: isActive ? 'var(--primary)' : 'var(--text-muted)', cursor: 'pointer' }}>
+                                    AD{String(idx + 1).padStart(2, '0')}
+                                    {hasAny && <span style={{ position: 'absolute', top: '-3px', right: '-3px', width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', border: '1px solid var(--bg-app)' }} />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Label do ad ativo */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--primary)' }}>
+                                {resolveAdName(adsData.namingPattern, activeIdx + 1)} — {mediaFiles[activeIdx]?.file?.name}
+                              </span>
+                              {Object.keys(overrides).length > 0 && (
+                                <button onClick={() => setAdCopyOverrides(prev => ({ ...prev, [activeId]: {} }))} style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '4px', border: '1px solid var(--border-main)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                                  Resetar
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Campos com override */}
+                            {[
+                              { key: 'primaryText', label: 'Texto Principal', multiline: true },
+                              { key: 'title', label: 'Título', multiline: false },
+                              { key: 'description', label: 'Descrição', multiline: false },
+                            ].map(({ key, label, multiline }) => (
+                              <div key={key}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                  <label style={{ fontSize: '11px', fontWeight: '700', color: hasOverride(key) ? '#10b981' : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</label>
+                                  {hasOverride(key) && (
+                                    <button onClick={() => clearVal(key)} style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '3px', border: '1px solid rgba(16,185,129,0.3)', background: 'transparent', color: '#10b981', cursor: 'pointer' }}>← global</button>
+                                  )}
+                                </div>
+                                {multiline ? (
+                                  <textarea rows={3} value={getVal(key)} onChange={e => setVal(key, e.target.value)}
+                                    style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${hasOverride(key) ? '#10b981' : 'var(--border-main)'}`, background: hasOverride(key) ? 'rgba(16,185,129,0.04)' : 'transparent', color: 'var(--text-main)', fontSize: '13px', outline: 'none', resize: 'none', boxSizing: 'border-box' }} />
+                                ) : (
+                                  <input type="text" value={getVal(key)} onChange={e => setVal(key, e.target.value)}
+                                    style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${hasOverride(key) ? '#10b981' : 'var(--border-main)'}`, background: hasOverride(key) ? 'rgba(16,185,129,0.04)' : 'transparent', color: 'var(--text-main)', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
+                                )}
+                              </div>
+                            ))}
+                            <SelectField label="CTA" value={getVal('cta')} onChange={val => setVal('cta', val)} highlight={hasOverride('cta')} options={CTA_OPTIONS} />
+                            {needsUrl && (
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                  <label style={{ fontSize: '11px', fontWeight: '700', color: hasOverride('link') ? '#10b981' : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>URL</label>
+                                  {hasOverride('link') && <button onClick={() => clearVal('link')} style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '3px', border: '1px solid rgba(16,185,129,0.3)', background: 'transparent', color: '#10b981', cursor: 'pointer' }}>← global</button>}
+                                </div>
+                                <input type="text" value={getVal('link')} onChange={e => setVal('link', e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${hasOverride('link') ? '#10b981' : 'var(--border-main)'}`, background: hasOverride('link') ? 'rgba(16,185,129,0.04)' : 'transparent', color: 'var(--text-main)', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+
+                      {/* ── Copy global (visível no modo global) ── */}
+                      {!individualCopyMode && <>
                       <div>
                         <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Copy Principal (aplicada para todos)
+                          Texto Principal
                         </label>
                         <textarea rows={3} value={adsData.primaryText} onChange={e => setAdsData({ ...adsData, primaryText: e.target.value })} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-main)', background: 'transparent', color: 'var(--text-main)', fontSize: '13px', outline: 'none', resize: 'none', boxSizing: 'border-box' }} />
                       </div>
                       <Field label="Título" value={adsData.title} onChange={e => setAdsData({ ...adsData, title: e.target.value })} />
                       <Field label="Descrição" value={adsData.description} onChange={e => setAdsData({ ...adsData, description: e.target.value })} placeholder="Descrição curta (opcional)" />
-                      <Select label="CTA (Call to Action)" value={adsData.cta} onChange={e => setAdsData({ ...adsData, cta: e.target.value })}>
-                        {CTA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </Select>
+                      <SelectField label="CTA (Call to Action)" value={adsData.cta} onChange={val => setAdsData({ ...adsData, cta: val })} options={CTA_OPTIONS} />
+                      </>}
                       {/* ── Bloco inteligente: URL / WhatsApp / formulário ── */}
                       {isAutoMsgDest ? (
                         <div style={{ padding: '12px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.25)', borderRadius: '8px', fontSize: '12px', color: '#25d366', fontWeight: '600', display: 'flex', flexDirection: 'column', gap: '8px' }}>

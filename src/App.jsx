@@ -10,8 +10,10 @@ import PortalCliente from './pages/PortalCliente';
 import Demandas from './pages/Demandas';
 import Dashboard from './pages/Dashboard';
 import Metricas from './pages/Metricas';
+import Automacoes from './pages/Automacoes';
 import MetaAdCreator from './components/MetaAdCreator';
 import { CHECKLIST_TEMPLATE, CHECKLIST_META_ADS, CHECKLIST_GOOGLE_ADS, CHECKLIST_GENERICO, MOCK_CARDS } from './data/mockData';
+import { fireAutomation } from './utils/automations';
 import './App.css';
 
 const DEMANDAS_KEY = 'venza_demandas';
@@ -100,7 +102,23 @@ function App() {
       localStorage.setItem(DEMANDAS_KEY, JSON.stringify(updated));
       return updated;
     });
-    showToast("🔔 Nova demanda recebida!");
+    if (novaDemanda.fromPortal === false) {
+      showToast("📝 Demanda interna criada!");
+      fireAutomation('demanda_interna', {
+        clientId:    novaDemanda.clientId,
+        cardName:    novaDemanda.titulo,
+        columnName:  'Demandas',
+        projectName: novaDemanda.projeto || '',
+      });
+    } else {
+      showToast("🔔 Nova demanda recebida pelo Portal!");
+      fireAutomation('demanda_recebida', {
+        clientId:    novaDemanda.clientId,
+        cardName:    novaDemanda.titulo,
+        columnName:  'Portal',
+        projectName: novaDemanda.projeto || '',
+      });
+    }
   };
 
   // ── Aprovação de Demanda → cria card no Kanban ──
@@ -116,6 +134,13 @@ function App() {
     let selectedChecklist = CHECKLIST_GENERICO;
     if (demanda.plataforma?.includes('Meta')) selectedChecklist = CHECKLIST_META_ADS;
     else if (demanda.plataforma?.includes('Google')) selectedChecklist = CHECKLIST_GOOGLE_ADS;
+
+    fireAutomation('demanda_aprovada', {
+      clientId:    demanda.clientId,
+      cardName:    demanda.titulo,
+      columnName:  'Aprovada',
+      projectName: demanda.projeto || '',
+    });
 
     const newCard = {
       id: uuidv4(),
@@ -198,11 +223,12 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/demandas" element={<Demandas demandas={demandas} onApprove={handleApproveDemanda} onReject={handleRejectDemanda} />} />
+          <Route path="/demandas" element={<Demandas demandas={demandas} onApprove={handleApproveDemanda} onReject={handleRejectDemanda} onSubmitDemanda={handleSubmitDemanda} />} />
           <Route path="/kanban" element={<KanbanView cards={kanbanCards} setCards={setKanbanCards} />} />
           <Route path="/metricas" element={<Metricas />} />
           <Route path="/clientes" element={<Clientes demandas={demandas} />} />
           <Route path="/configuracoes" element={<Configuracoes />} />
+          <Route path="/automacoes"   element={<Automacoes />} />
           <Route path="*" element={<Navigate to="/demandas" replace />} />
         </Routes>
       </main>
