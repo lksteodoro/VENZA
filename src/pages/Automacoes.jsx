@@ -3,6 +3,7 @@ import {
   Zap, MessageSquare, Settings, Users,
   ToggleLeft, ToggleRight, Check, Save, Loader2,
   CheckCircle, AlertCircle, TrendingDown,
+  Search, Building2, Pencil, X,
 } from 'lucide-react';
 import { CLIENTS } from '../data/mockData';
 import {
@@ -13,7 +14,9 @@ import {
 } from '../utils/automations';
 import {
   checkAccountBalance, loadBalanceAlerts, saveBalanceAlerts, fmtCurrency,
+  loadAutoCheckConfig, saveAutoCheckConfig, isBusinessHoursBRT,
 } from '../utils/metaBalance';
+import { runAutoBalanceCheck } from '../utils/balanceAutoCheck';
 
 // ─── Gatilhos disponíveis ──────────────────────────────────────────────────────
 export const TRIGGER_GROUPS = [
@@ -215,7 +218,60 @@ const Automacoes = () => {
   const [checkingId,    setCheckingId]    = useState(null); // clientId being checked
   const [checkingAll,   setCheckingAll]   = useState(false);
 
+  // ── Account config panel (inside Saldo tab) ──
+  const [cfgOpenId,          setCfgOpenId]          = useState(null);
+  const [cfgBms,             setCfgBms]             = useState([]);
+  const [cfgLoadingBms,      setCfgLoadingBms]      = useState(false);
+  const [cfgBmId,            setCfgBmId]            = useState('');
+  const [cfgBmSearch,        setCfgBmSearch]        = useState('');
+  const [cfgAccounts,        setCfgAccounts]        = useState([]);
+  const [cfgLoadingAccounts, setCfgLoadingAccounts] = useState(false);
+  const [cfgAccountId,       setCfgAccountId]       = useState('');
+  const [cfgAccSearch,       setCfgAccSearch]       = useState('');
+  const [cfgManual,          setCfgManual]          = useState(false);
+  const [cfgManualId,        setCfgManualId]        = useState('');
+  const [cfgConfigSaved,     setCfgConfigSaved]     = useState(null);
+  const [cfgBmOpen,          setCfgBmOpen]          = useState(false);
+  const [cfgAccOpen,         setCfgAccOpen]         = useState(false);
+
   useEffect(() => { saveBalanceAlerts(balanceAlerts); }, [balanceAlerts]);
+
+  // ── Auto-check config ──
+  const [autoCheck, setAutoCheck] = useState(() => loadAutoCheckConfig());
+  const [runningAuto, setRunningAuto] = useState(false);
+
+  const saveAutoCheck = (patch) => {
+    const updated = { ...autoCheck, ...patch };
+    setAutoCheck(updated);
+    saveAutoCheckConfig(updated);
+  };
+
+  const triggerManualAutoCheck = async () => {
+    setRunningAuto(true);
+    await runAutoBalanceCheck();
+    setAutoCheck(loadAutoCheckConfig()); // reload lastRun
+    setRunningAuto(false);
+  };
+
+  // Refresh balanceAlerts when background auto-check fires
+  useEffect(() => {
+    const handler = () => setBalanceAlerts(seedBalanceAlerts(loadBalanceAlerts()));
+    window.addEventListener('venza:balance-checked', handler);
+    return () => window.removeEventListener('venza:balance-checked', handler);
+  }, []);
+
+  // Load ad accounts when a BM is selected in the config panel
+  useEffect(() => {
+    if (!cfgBmId || cfgManual) { setCfgAccounts([]); return; }
+    const token = localStorage.getItem('meta_access_token');
+    if (!token) return;
+    setCfgLoadingAccounts(true);
+    fetch(`https://graph.facebook.com/v25.0/${cfgBmId}/owned_ad_accounts?fields=id,name,account_status&limit=50&access_token=${token}`)
+      .then(r => r.json())
+      .then(data => { if (!data.error) setCfgAccounts((data.data || []).filter(a => a.account_status === 1)); })
+      .catch(() => {})
+      .finally(() => setCfgLoadingAccounts(false));
+  }, [cfgBmId, cfgManual]);
 
   const updateAlert = (clientId, patch) =>
     setBalanceAlerts(prev => prev.map(a => a.clientId === clientId ? { ...a, ...patch } : a));
@@ -233,11 +289,12 @@ const Automacoes = () => {
     try {
       const result = await checkAccountBalance(saved.adAccountId, token);
       const now    = new Date().toLocaleString('pt-BR');
-      if (!result.isPrepay) {
-        updateAlert(clientId, { lastBalance: null, isPrepay: false, lastCheck: now, lastError: null });
+      // forceMonitor permite monitorar mesmo com tipo não reconhecido
+      if (!result.isPrepay && !alert.forceMonitor) {
+        updateAlert(clientId, { lastBalance: null, isPrepay: false, fundingType: result.fundingType, lastCheck: now, lastError: null });
         return;
       }
-      updateAlert(clientId, { lastBalance: result.balance, currency: result.currency, isPrepay: true, lastCheck: now, lastError: null });
+      updateAlert(clientId, { lastBalance: result.balance, currency: result.currency, isPrepay: result.isPrepay || alert.forceMonitor, fundingType: result.fundingType, lastCheck: now, lastError: null });
       if (alert.enabled && result.balance < (alert.threshold || 0)) {
         const saldoFmt  = fmtCurrency(result.balance,          result.currency);
         const limiteFmt = fmtCurrency(alert.threshold || 0,   result.currency);
@@ -262,6 +319,40 @@ const Automacoes = () => {
       await runCheck(a.clientId);
     }
     setCheckingAll(false);
+  };
+
+  const openAccountConfig = async (clientId) => {
+    if (cfgOpenId === clientId) { setCfgOpenId(null); return; }
+    const saved = (() => { try { return JSON.parse(localStorage.getItem(`meta_defaults_${clientId}`)); } catch { return null; } })();
+    const hasBm = !!saved?.bmId;
+    setCfgBmId(saved?.bmId || '');
+    setCfgAccountId(saved?.adAccountId || '');
+    setCfgManual(!hasBm && !!saved?.adAccountId);
+    setCfgManualId(saved?.adAccountId || ''); // always pre-fill
+    setCfgBmSearch('');
+    setCfgAccSearch('');
+    setCfgBmOpen(false);
+    setCfgAccOpen(false);
+    setCfgOpenId(clientId);
+    const token = localStorage.getItem('meta_access_token');
+    if (cfgBms.length === 0 && token) {
+      setCfgLoadingBms(true);
+      try {
+        const res = await fetch(`https://graph.facebook.com/v25.0/me/businesses?fields=id,name&limit=50&access_token=${token}`);
+        const data = await res.json();
+        if (!data.error) setCfgBms(data.data || []);
+      } catch {} finally { setCfgLoadingBms(false); }
+    }
+  };
+
+  const saveAccountConfig = (clientId) => {
+    const raw = cfgManual ? cfgManualId.trim() : cfgAccountId;
+    if (!raw) return;
+    const adAccountId = raw.startsWith('act_') ? raw : `act_${raw}`;
+    localStorage.setItem(`meta_defaults_${clientId}`, JSON.stringify({ bmId: cfgManual ? null : (cfgBmId || null), adAccountId }));
+    setBalanceAlerts(prev => [...prev]); // force re-render to reflect new account
+    setCfgConfigSaved(clientId);
+    setTimeout(() => { setCfgConfigSaved(null); setCfgOpenId(null); }, 1500);
   };
 
   const totalDisparos = automations.reduce((s, a) => s + (a.disparos || 0), 0);
@@ -296,7 +387,7 @@ const Automacoes = () => {
           { label: 'Regras Ativas',      value: automations.filter(a => a.ativa).length, color: '#10b981' },
           { label: 'Total de Regras',    value: automations.length,                       color: 'var(--primary)' },
           { label: 'Disparos Totais',    value: totalDisparos,                            color: '#f59e0b' },
-          { label: 'Clientes com Grupo', value: Object.values(groups).filter(g => g?.jid).length, color: '#38bdf8' },
+          { label: 'Clientes Configurados', value: Object.values(groups).filter(g => g?.jid || g?.numero).length, color: '#38bdf8' },
         ].map(s => (
           <div key={s.label} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '16px' }}>
             <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>{s.label}</div>
@@ -391,33 +482,59 @@ const Automacoes = () => {
       {tab === 'grupos' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '700px' }}>
           <div style={{ padding: '12px 16px', background: 'rgba(56,189,248,0.07)', border: '1px solid rgba(56,189,248,0.2)', borderRadius: '10px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-            <strong style={{ color: 'var(--text-main)' }}>Como obter o JID do grupo:</strong> No WhatsApp Web, abra o grupo → clique em informações → a URL mostrará o ID do grupo. No Evolution API, use <code style={{ background: 'var(--bg-app)', padding: '1px 5px', borderRadius: '4px', fontSize: '11px' }}>GET /group/fetchAllGroups/{'{instance}'}</code> para listar todos os grupos com seus JIDs.
+            <strong style={{ color: 'var(--text-main)' }}>Destino por cliente:</strong> escolha entre enviar para um <strong>grupo</strong> (JID <code style={{ background: 'var(--bg-app)', padding: '1px 4px', borderRadius: '3px', fontSize: '11px' }}>@g.us</code>) ou diretamente para o <strong>número</strong> do cliente. Para obter o JID do grupo use <code style={{ background: 'var(--bg-app)', padding: '1px 5px', borderRadius: '4px', fontSize: '11px' }}>GET /group/fetchAllGroups/{'{instance}'}</code> na Evolution API.
           </div>
           {clients.map(client => {
-            const g = groups[client.id] || {};
+            const g       = groups[client.id] || {};
+            const tipo    = g.tipo || 'grupo';
             const isSaved = groupSaved === client.id;
+            const isOk    = tipo === 'grupo' ? !!g.jid : !!g.numero;
             return (
-              <div key={client.id} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '12px', padding: '16px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+              <div key={client.id} style={{ background: 'var(--bg-surface)', border: `1px solid ${isOk ? 'rgba(16,185,129,0.25)' : 'var(--border-light)'}`, borderRadius: '12px', padding: '16px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                 <img src={client.avatarUrl} alt={client.name} style={{ width: '40px', height: '40px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} onError={e => { e.target.style.display = 'none'; }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '10px' }}>{client.name}</p>
+
+                  {/* Tipo toggle */}
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                    {[{ v: 'grupo', label: '👥 Grupo' }, { v: 'numero', label: '📱 Número' }].map(opt => (
+                      <button key={opt.v} onClick={() => updateGroup(client.id, 'tipo', opt.v)}
+                        style={{ padding: '5px 12px', borderRadius: '7px', border: `1.5px solid ${tipo === opt.v ? 'var(--primary)' : 'var(--border-light)'}`, background: tipo === opt.v ? 'rgba(139,92,246,0.1)' : 'transparent', color: tipo === opt.v ? 'var(--primary)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Campo conforme tipo */}
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      value={g.jid || ''}
-                      onChange={e => updateGroup(client.id, 'jid', e.target.value)}
-                      placeholder="Ex: 5511999999999-1234567890@g.us"
-                      style={{ flex: 1, padding: '9px 12px', fontSize: '12px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none', fontFamily: 'monospace' }}
-                      onFocus={e => e.target.style.borderColor = 'var(--primary)'}
-                      onBlur={e => e.target.style.borderColor = 'var(--border-main)'}
-                    />
+                    {tipo === 'grupo' ? (
+                      <input
+                        value={g.jid || ''}
+                        onChange={e => updateGroup(client.id, 'jid', e.target.value)}
+                        placeholder="Ex: 5511999999999-1234567890@g.us"
+                        style={{ flex: 1, padding: '9px 12px', fontSize: '12px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none', fontFamily: 'monospace' }}
+                        onFocus={e => e.target.style.borderColor = 'var(--primary)'}
+                        onBlur={e => e.target.style.borderColor = 'var(--border-main)'}
+                      />
+                    ) : (
+                      <input
+                        value={g.numero || ''}
+                        onChange={e => updateGroup(client.id, 'numero', e.target.value)}
+                        placeholder="Ex: 5511999999999  (com DDI, só números)"
+                        style={{ flex: 1, padding: '9px 12px', fontSize: '12px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none', fontFamily: 'monospace' }}
+                        onFocus={e => e.target.style.borderColor = 'var(--primary)'}
+                        onBlur={e => e.target.style.borderColor = 'var(--border-main)'}
+                      />
+                    )}
                     <button onClick={() => saveGroup(client.id)}
                       style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '8px', border: 'none', background: isSaved ? '#10b981' : 'var(--primary)', color: 'white', fontSize: '12px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background 0.2s' }}>
                       {isSaved ? <><Check size={13} /> Salvo!</> : <><Save size={13} /> Salvar</>}
                     </button>
                   </div>
-                  {g.jid && (
-                    <p style={{ fontSize: '11px', color: '#10b981', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <CheckCircle size={10} /> Grupo configurado
+
+                  {isOk && (
+                    <p style={{ fontSize: '11px', color: '#10b981', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <CheckCircle size={10} /> {tipo === 'grupo' ? `Grupo: ${g.jid}` : `Número: ${g.numero}`}
                     </p>
                   )}
                 </div>
@@ -436,6 +553,53 @@ const Automacoes = () => {
             <strong style={{ color: '#ef4444' }}>⚠️ Apenas contas pré-pagas (saldo).</strong> Contas com cartão de crédito não possuem saldo monitorável e serão sinalizadas como "não monitorável". A conta Meta e o token devem estar configurados em <strong style={{ color: 'var(--text-main)' }}>Configurações → Contas por Cliente</strong>.
           </div>
 
+          {/* ── Verificação Automática ── */}
+          {(() => {
+            const lastRun  = autoCheck.lastRun ? new Date(autoCheck.lastRun) : null;
+            const nextRun  = lastRun ? new Date(lastRun.getTime() + (autoCheck.intervalHours || 6) * 3600000) : null;
+            const fmtDt    = (d) => d?.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) ?? '—';
+            const inBH     = isBusinessHoursBRT();
+            return (
+              <div style={{ background: 'var(--bg-surface)', border: `1.5px solid ${autoCheck.enabled ? 'rgba(139,92,246,0.3)' : 'var(--border-light)'}`, borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: autoCheck.enabled ? 'rgba(139,92,246,0.04)' : 'transparent' }}>
+                  <div style={{ flex: 1, minWidth: '200px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '3px' }}>
+                      Verificação Automática
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                      Consulta o saldo a cada <strong>{autoCheck.intervalHours || 6}h</strong>.
+                      Alertas WhatsApp apenas em horário comercial <strong>09:00–18:00 BRT</strong>.
+                      {' '}<span style={{ color: inBH ? '#10b981' : '#f59e0b' }}>{inBH ? '● Dentro do horário agora' : '● Fora do horário agora'}</span>
+                    </div>
+                  </div>
+
+                  {/* Last / Next run */}
+                  {lastRun && (
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.7', flexShrink: 0 }}>
+                      <div>Última execução: <strong style={{ color: 'var(--text-main)' }}>{fmtDt(lastRun)}</strong></div>
+                      <div>Próxima execução: <strong style={{ color: 'var(--text-main)' }}>{fmtDt(nextRun)}</strong></div>
+                    </div>
+                  )}
+
+                  {/* Run now */}
+                  <button onClick={triggerManualAutoCheck} disabled={runningAuto}
+                    title="Executa a verificação agora (independente do intervalo)"
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 13px', borderRadius: '8px', border: '1px solid var(--border-main)', background: 'var(--bg-app)', color: 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: runningAuto ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {runningAuto ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <TrendingDown size={13} />}
+                    {runningAuto ? 'Verificando...' : 'Executar Agora'}
+                  </button>
+
+                  {/* Toggle */}
+                  <button onClick={() => saveAutoCheck({ enabled: !autoCheck.enabled })}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 13px', borderRadius: '8px', border: `1px solid ${autoCheck.enabled ? 'rgba(139,92,246,0.4)' : 'var(--border-main)'}`, background: autoCheck.enabled ? 'rgba(139,92,246,0.1)' : 'var(--bg-app)', color: autoCheck.enabled ? 'var(--primary)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, transition: 'all 0.2s' }}>
+                    {autoCheck.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                    {autoCheck.enabled ? 'Ativo' : 'Inativo'}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Verificar Todos */}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={runCheckAll} disabled={checkingAll || balanceAlerts.every(a => !a.enabled)}
@@ -451,11 +615,12 @@ const Automacoes = () => {
             const client   = clients.find(c => c.id === alert.clientId);
             const saved    = (() => { try { return JSON.parse(localStorage.getItem(`meta_defaults_${alert.clientId}`)); } catch { return null; } })();
             const hasAcct  = !!saved?.adAccountId;
-            const isChecking = checkingId === alert.clientId;
-            const notPrepay  = alert.lastCheck && alert.isPrepay === false;
+            const isChecking  = checkingId === alert.clientId;
+            const notPrepay   = alert.lastCheck && alert.isPrepay === false && !alert.forceMonitor;
+            const unknownType = alert.lastCheck && alert.fundingType === null;
 
             return (
-              <div key={alert.clientId} style={{ background: 'var(--bg-surface)', border: `1.5px solid ${alert.enabled && !notPrepay ? 'rgba(239,68,68,0.3)' : 'var(--border-light)'}`, borderRadius: '14px', overflow: 'hidden', opacity: notPrepay ? 0.5 : 1 }}>
+              <div key={alert.clientId} style={{ background: 'var(--bg-surface)', border: `1.5px solid ${alert.enabled && !notPrepay ? 'rgba(239,68,68,0.3)' : 'var(--border-light)'}`, borderRadius: '14px', overflow: 'hidden', opacity: notPrepay ? 0.6 : 1 }}>
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', borderBottom: '1px solid var(--border-light)', background: alert.enabled && !notPrepay ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
                   {client?.avatarUrl
@@ -467,18 +632,132 @@ const Automacoes = () => {
                       {hasAcct
                         ? <span style={{ fontFamily: 'monospace' }}>{saved.adAccountId}</span>
                         : <span style={{ color: '#f59e0b' }}>⚠ Conta Meta não configurada</span>}
-                      {notPrepay && <span style={{ color: '#ef4444', fontWeight: '700' }}>· Cartão de crédito — não monitorável</span>}
-                      {alert.isPrepay === true && <span style={{ color: '#10b981', fontWeight: '700' }}>· Pré-pago ✓</span>}
+                      {notPrepay && <span style={{ color: '#ef4444', fontWeight: '700' }}>· type {alert.fundingType} — não reconhecido como pré-pago</span>}
+                      {unknownType && <span style={{ color: '#f59e0b', fontWeight: '700' }}>· tipo de financiamento não retornado pela API</span>}
+                      {(alert.isPrepay === true || alert.forceMonitor) && <span style={{ color: '#10b981', fontWeight: '700' }}>· Pré-pago ✓{alert.forceMonitor && alert.fundingType !== 2 && alert.fundingType !== 4 ? ' (forçado)' : ''}</span>}
                     </div>
                   </div>
-                  {/* Toggle */}
+                  {/* Configurar conta */}
+                  <button onClick={() => openAccountConfig(alert.clientId)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 11px', borderRadius: '8px', border: `1px solid ${cfgOpenId === alert.clientId ? 'var(--primary)' : 'var(--border-main)'}`, background: cfgOpenId === alert.clientId ? 'rgba(139,92,246,0.08)' : 'var(--bg-app)', color: cfgOpenId === alert.clientId ? 'var(--primary)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s' }}>
+                    {cfgOpenId === alert.clientId ? <X size={13} /> : <Pencil size={13} />}
+                    {cfgOpenId === alert.clientId ? 'Fechar' : (hasAcct ? 'Editar' : 'Configurar')}
+                  </button>
+                  {/* Forçar monitoramento quando tipo não reconhecido */}
+                  {(notPrepay || unknownType) && (
+                    <button onClick={() => updateAlert(alert.clientId, { forceMonitor: !alert.forceMonitor, isPrepay: !alert.forceMonitor || null })}
+                      title="A conta não foi detectada como pré-pago. Clique para forçar o monitoramento mesmo assim."
+                      style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 10px', borderRadius: '8px', border: `1px solid ${alert.forceMonitor ? '#f59e0b66' : 'var(--border-main)'}`, background: alert.forceMonitor ? 'rgba(245,158,11,0.1)' : 'var(--bg-app)', color: alert.forceMonitor ? '#f59e0b' : 'var(--text-muted)', fontSize: '11px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      {alert.forceMonitor ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                      Forçar
+                    </button>
+                  )}
+                  {/* Toggle ativo/inativo */}
                   <button onClick={() => updateAlert(alert.clientId, { enabled: !alert.enabled })}
-                    disabled={!hasAcct || notPrepay}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '8px', border: `1px solid ${alert.enabled ? 'rgba(239,68,68,0.4)' : 'var(--border-main)'}`, background: alert.enabled ? 'rgba(239,68,68,0.08)' : 'var(--bg-app)', color: alert.enabled ? '#ef4444' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: (!hasAcct || notPrepay) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: (!hasAcct || notPrepay) ? 0.4 : 1 }}>
+                    disabled={!hasAcct || (notPrepay && !alert.forceMonitor)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '8px', border: `1px solid ${alert.enabled ? 'rgba(239,68,68,0.4)' : 'var(--border-main)'}`, background: alert.enabled ? 'rgba(239,68,68,0.08)' : 'var(--bg-app)', color: alert.enabled ? '#ef4444' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: (!hasAcct || (notPrepay && !alert.forceMonitor)) ? 'not-allowed' : 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap', opacity: (!hasAcct || (notPrepay && !alert.forceMonitor)) ? 0.4 : 1 }}>
                     {alert.enabled ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
                     {alert.enabled ? 'Ativo' : 'Inativo'}
                   </button>
                 </div>
+
+                {/* ── Account config panel ── */}
+                {cfgOpenId === alert.clientId && (() => {
+                  const selBm  = cfgBms.find(b => b.id === cfgBmId);
+                  const selAcc = cfgAccounts.find(a => a.id === cfgAccountId);
+                  const canSave = cfgManual ? !!cfgManualId.trim() : !!cfgAccountId;
+                  return (
+                    <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-light)', background: 'rgba(139,92,246,0.03)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+                      {/* Mode toggle */}
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button onClick={() => { setCfgManual(false); setCfgBmId(''); setCfgAccountId(''); setCfgBmOpen(false); setCfgAccOpen(false); }}
+                          style={{ flex: 1, padding: '7px', borderRadius: '7px', border: `1.5px solid ${!cfgManual ? 'var(--primary)' : 'var(--border-light)'}`, background: !cfgManual ? 'rgba(139,92,246,0.1)' : 'var(--bg-app)', color: !cfgManual ? 'var(--primary)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                          <Building2 size={12} /> Via BM
+                        </button>
+                        <button onClick={() => { setCfgManual(true); setCfgBmId(''); setCfgAccounts([]); setCfgBmOpen(false); setCfgAccOpen(false); }}
+                          style={{ flex: 1, padding: '7px', borderRadius: '7px', border: `1.5px solid ${cfgManual ? 'var(--primary)' : 'var(--border-light)'}`, background: cfgManual ? 'rgba(139,92,246,0.1)' : 'var(--bg-app)', color: cfgManual ? 'var(--primary)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                          <Pencil size={12} /> Sem BM / Manual
+                        </button>
+                      </div>
+
+                      {!cfgManual ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {/* BM: filtro + select nativo */}
+                          <div>
+                            <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '5px' }}>Business Manager</label>
+                            {cfgLoadingBms ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0' }}><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Carregando BMs...</div>
+                            ) : cfgBms.length === 0 ? (
+                              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>{localStorage.getItem('meta_access_token') ? 'Nenhuma BM encontrada.' : '⚠ Configure o token Meta em Configurações.'}</p>
+                            ) : (
+                              <>
+                                <div style={{ position: 'relative', marginBottom: '5px' }}>
+                                  <Search size={12} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                                  <input value={cfgBmSearch} onChange={e => setCfgBmSearch(e.target.value)} placeholder="Filtrar BM..." style={{ width: '100%', padding: '7px 8px 7px 26px', fontSize: '12px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '6px', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = 'var(--primary)'} onBlur={e => e.target.style.borderColor = 'var(--border-main)'} />
+                                </div>
+                                <select value={cfgBmId} onChange={e => { setCfgBmId(e.target.value); setCfgAccountId(''); setCfgAccSearch(''); }} style={{ width: '100%', padding: '8px 10px', fontSize: '12px', background: 'var(--bg-app)', border: `1px solid ${cfgBmId ? 'var(--primary)' : 'var(--border-main)'}`, borderRadius: '6px', color: cfgBmId ? 'var(--text-main)' : 'var(--text-muted)', outline: 'none', cursor: 'pointer' }}>
+                                  <option value="">— Selecionar BM —</option>
+                                  {cfgBms.filter(bm => !cfgBmSearch || bm.name.toLowerCase().includes(cfgBmSearch.toLowerCase()) || bm.id.includes(cfgBmSearch)).map(bm => (
+                                    <option key={bm.id} value={bm.id}>{bm.name} ({bm.id})</option>
+                                  ))}
+                                </select>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Conta: filtro + select nativo */}
+                          {cfgBmId && (
+                            <div>
+                              <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '5px' }}>Conta de Anúncio</label>
+                              {cfgLoadingAccounts ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0' }}><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Carregando contas...</div>
+                              ) : cfgAccounts.length === 0 ? (
+                                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Nenhuma conta ativa nesta BM.</p>
+                              ) : (
+                                <>
+                                  <div style={{ position: 'relative', marginBottom: '5px' }}>
+                                    <Search size={12} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                                    <input value={cfgAccSearch} onChange={e => setCfgAccSearch(e.target.value)} placeholder="Filtrar conta..." style={{ width: '100%', padding: '7px 8px 7px 26px', fontSize: '12px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '6px', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#10b981'} onBlur={e => e.target.style.borderColor = 'var(--border-main)'} />
+                                  </div>
+                                  <select value={cfgAccountId} onChange={e => setCfgAccountId(e.target.value)} style={{ width: '100%', padding: '8px 10px', fontSize: '12px', background: 'var(--bg-app)', border: `1px solid ${cfgAccountId ? '#10b981' : 'var(--border-main)'}`, borderRadius: '6px', color: cfgAccountId ? 'var(--text-main)' : 'var(--text-muted)', outline: 'none', cursor: 'pointer' }}>
+                                    <option value="">— Selecionar Conta —</option>
+                                    {cfgAccounts.filter(a => !cfgAccSearch || a.name?.toLowerCase().includes(cfgAccSearch.toLowerCase()) || a.id.includes(cfgAccSearch)).map(acc => (
+                                      <option key={acc.id} value={acc.id}>{acc.name || acc.id} ({acc.id})</option>
+                                    ))}
+                                  </select>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* Manual mode */
+                        <div>
+                          <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '5px' }}>ID da Conta de Anúncio</label>
+                          <input
+                            value={cfgManualId}
+                            onChange={e => setCfgManualId(e.target.value)}
+                            placeholder="Ex: act_123456789  ou apenas  123456789"
+                            style={{ width: '100%', padding: '9px 12px', fontSize: '13px', background: 'var(--bg-app)', border: '1px solid var(--border-main)', borderRadius: '7px', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box', fontFamily: 'monospace' }}
+                            onFocus={e => e.target.style.borderColor = 'var(--primary)'}
+                            onBlur={e => e.target.style.borderColor = 'var(--border-main)'}
+                          />
+                          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', margin: '4px 0 0' }}>
+                            O prefixo <code style={{ background: 'var(--bg-app)', padding: '1px 4px', borderRadius: '3px' }}>act_</code> é adicionado automaticamente.
+                          </p>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button onClick={() => saveAccountConfig(alert.clientId)} disabled={!canSave}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '7px', border: 'none', background: cfgConfigSaved === alert.clientId ? '#10b981' : 'var(--primary)', color: 'white', fontSize: '12px', fontWeight: '700', cursor: !canSave ? 'not-allowed' : 'pointer', opacity: !canSave ? 0.5 : 1, transition: 'background 0.2s' }}>
+                          {cfgConfigSaved === alert.clientId ? <><Check size={13} /> Salvo!</> : <><Save size={13} /> Salvar Conta</>}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Config row */}
                 <div style={{ padding: '14px 18px', display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -505,7 +784,7 @@ const Automacoes = () => {
                         {alert.lastError
                           ? <span style={{ color: '#ef4444' }}>❌ {alert.lastError}</span>
                           : alert.isPrepay === false
-                            ? <span>💳 Cartão de crédito — saldo não monitorável</span>
+                            ? <span>⚠️ Tipo de financiamento <code style={{ background: 'var(--bg-surface)', padding: '1px 4px', borderRadius: '3px' }}>{alert.fundingType ?? 'null'}</code> — não reconhecido como pré-pago. Use "Forçar" se tiver certeza que é saldo.</span>
                             : <span>
                                 Saldo atual: <strong style={{ color: alert.lastBalance < (alert.threshold || 0) ? '#ef4444' : '#10b981', fontSize: '13px' }}>
                                   {fmtCurrency(alert.lastBalance ?? 0, alert.currency)}

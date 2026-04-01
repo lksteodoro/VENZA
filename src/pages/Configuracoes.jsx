@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Cog, Activity, ShieldCheck, RotateCcw, Save, Check, GripVertical, ChevronDown, Pencil, Link as LinkIcon, Key, Loader2, AlertCircle, CheckCircle, Zap, ExternalLink, Users, Building2 } from 'lucide-react';
+import { Plus, Trash2, Cog, Activity, ShieldCheck, RotateCcw, Save, Check, GripVertical, ChevronDown, Pencil, Link as LinkIcon, Key, Loader2, AlertCircle, CheckCircle, Zap, ExternalLink, Users, Building2, Search, Share2, Copy, X, Lock, Eye, EyeOff, Calendar } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { BASE_SUBTASKS, CLIENTS } from '../data/mockData';
 
@@ -226,10 +226,30 @@ const Configuracoes = () => {
   const [cfgBms, setCfgBms] = useState([]);
   const [cfgLoadingBms, setCfgLoadingBms] = useState(false);
   const [cfgBmId, setCfgBmId] = useState('');
+  const [cfgBmSearch, setCfgBmSearch] = useState('');
   const [cfgAccounts, setCfgAccounts] = useState([]);
   const [cfgLoadingAccounts, setCfgLoadingAccounts] = useState(false);
   const [cfgAccountId, setCfgAccountId] = useState('');
+  const [cfgAccSearch, setCfgAccSearch] = useState('');
+  const [cfgManual, setCfgManual] = useState(false);
+  const [cfgManualId, setCfgManualId] = useState('');
   const [cfgSavedId, setCfgSavedId] = useState(null);
+
+  // Dashboard Link state
+  const [dlModal, setDlModal] = useState(null); // { client, adAccountId }
+  const [dlLabel, setDlLabel] = useState('');
+  const [dlUsePassword, setDlUsePassword] = useState(false);
+  const [dlPassword, setDlPassword] = useState('');
+  const [dlShowPass, setDlShowPass] = useState(false);
+  const [dlUseExpiry, setDlUseExpiry] = useState(false);
+  const [dlExpiry, setDlExpiry] = useState('');
+  const [dlSections, setDlSections] = useState(['insights', 'campaigns', 'adsets', 'ads']);
+  const [dlDateLock, setDlDateLock] = useState('');
+  const [dlGeneratedLink, setDlGeneratedLink] = useState('');
+  const [dlCopied, setDlCopied] = useState(false);
+  const [dashLinks, setDashLinks] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('venza_dashboard_links') || '[]'); } catch { return []; }
+  });
 
   const cfgToken = metaToken.trim() || localStorage.getItem('meta_access_token') || '';
 
@@ -277,9 +297,14 @@ const Configuracoes = () => {
     // Carrega config salva
     try {
       const saved = JSON.parse(localStorage.getItem(`meta_defaults_${clientId}`) || 'null');
+      const hasBm = !!saved?.bmId;
       setCfgBmId(saved?.bmId || '');
       setCfgAccountId(saved?.adAccountId || '');
-    } catch { setCfgBmId(''); setCfgAccountId(''); }
+      setCfgManual(!hasBm && !!saved?.adAccountId);
+      setCfgManualId(saved?.adAccountId || '');
+      setCfgBmSearch('');
+      setCfgAccSearch('');
+    } catch { setCfgBmId(''); setCfgAccountId(''); setCfgManual(false); setCfgManualId(''); }
     // Carrega BMs se ainda não foram carregadas
     if (cfgBms.length === 0 && cfgToken) {
       setCfgLoadingBms(true);
@@ -292,7 +317,7 @@ const Configuracoes = () => {
   };
 
   useEffect(() => {
-    if (!cfgBmId || !cfgToken) { setCfgAccounts([]); return; }
+    if (!cfgBmId || cfgManual || !cfgToken) { setCfgAccounts([]); return; }
     setCfgLoadingAccounts(true);
     fetch(`${META_API_CFG}/${cfgBmId}/owned_ad_accounts?fields=id,name,account_status&limit=50&access_token=${cfgToken}`)
       .then(r => r.json())
@@ -301,11 +326,13 @@ const Configuracoes = () => {
       })
       .catch(() => {})
       .finally(() => setCfgLoadingAccounts(false));
-  }, [cfgBmId, cfgToken]);
+  }, [cfgBmId, cfgManual, cfgToken]);
 
   const saveClientConfig = (clientId) => {
-    if (!cfgBmId || !cfgAccountId) return;
-    localStorage.setItem(`meta_defaults_${clientId}`, JSON.stringify({ bmId: cfgBmId, adAccountId: cfgAccountId }));
+    const raw = cfgManual ? cfgManualId.trim() : cfgAccountId;
+    if (!raw) return;
+    const adAccountId = raw.startsWith('act_') ? raw : `act_${raw}`;
+    localStorage.setItem(`meta_defaults_${clientId}`, JSON.stringify({ bmId: cfgManual ? null : (cfgBmId || null), adAccountId }));
     setCfgSavedId(clientId);
     setTimeout(() => setCfgSavedId(null), 2500);
   };
@@ -319,6 +346,71 @@ const Configuracoes = () => {
   const getClientSaved = (clientId) => {
     try { return JSON.parse(localStorage.getItem(`meta_defaults_${clientId}`) || 'null'); } catch { return null; }
   };
+
+  const openDashLinkModal = (client, adAccountId) => {
+    setDlLabel('');
+    setDlUsePassword(false);
+    setDlPassword('');
+    setDlShowPass(false);
+    setDlUseExpiry(false);
+    setDlExpiry('');
+    setDlSections(['insights', 'campaigns', 'adsets', 'ads']);
+    setDlDateLock('');
+    setDlGeneratedLink('');
+    setDlCopied(false);
+    setDlModal({ client, adAccountId });
+  };
+
+  const handleGenerateDashLink = () => {
+    if (!dlModal) return;
+    const config = {
+      v: 1,
+      clientId: dlModal.client.id,
+      clientName: dlModal.client.name,
+      adAccountId: dlModal.adAccountId,
+      accessToken: cfgToken,
+      label: dlLabel.trim() || null,
+      password: dlUsePassword && dlPassword.trim() ? dlPassword.trim() : null,
+      expiresAt: dlUseExpiry && dlExpiry ? new Date(dlExpiry + 'T23:59:59').toISOString() : null,
+      allowedSections: dlSections,
+      dateRangeLock: dlDateLock || null,
+    };
+    const token = btoa(unescape(encodeURIComponent(JSON.stringify(config))));
+    const link = `${window.location.origin}/dashboard/cliente/${token}`;
+    setDlGeneratedLink(link);
+    const entry = { id: uuidv4(), token, clientId: dlModal.client.id, clientName: dlModal.client.name, label: config.label, createdAt: new Date().toISOString(), expiresAt: config.expiresAt, isActive: true };
+    const updated = [entry, ...dashLinks];
+    setDashLinks(updated);
+    localStorage.setItem('venza_dashboard_links', JSON.stringify(updated));
+  };
+
+  const handleCopyDashLink = (link) => {
+    navigator.clipboard.writeText(link).then(() => {
+      setDlCopied(true);
+      setTimeout(() => setDlCopied(false), 2000);
+    });
+  };
+
+  const handleRevokeDashLink = (id) => {
+    const updated = dashLinks.filter(l => l.id !== id);
+    setDashLinks(updated);
+    localStorage.setItem('venza_dashboard_links', JSON.stringify(updated));
+  };
+
+  const DL_SECTIONS_OPTIONS = [
+    { value: 'insights', label: 'Resumo (KPIs + Gráfico)' },
+    { value: 'campaigns', label: 'Campanhas' },
+    { value: 'adsets', label: 'Conjuntos de Anúncios' },
+    { value: 'ads', label: 'Anúncios & Criativos' },
+  ];
+
+  const DL_DATE_OPTIONS = [
+    { value: '', label: 'Livre (cliente escolhe)' },
+    { value: 'last_7d', label: 'Fixo: Últimos 7 dias' },
+    { value: 'last_30d', label: 'Fixo: Últimos 30 dias' },
+    { value: 'this_month', label: 'Fixo: Este mês' },
+    { value: 'last_month', label: 'Fixo: Mês passado' },
+  ];
 
   const handleSave = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
@@ -827,70 +919,307 @@ const Configuracoes = () => {
                 {/* Expanded panel */}
                 {isExpanded && (
                   <div style={{ borderTop: '1px solid var(--border-light)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--bg-app)' }}>
-                    {/* BM */}
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Business Manager</label>
-                      {cfgLoadingBms ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Carregando BMs...</div>
-                      ) : cfgBms.length === 0 ? (
-                        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nenhuma BM encontrada para este token.</p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {cfgBms.map(bm => (
-                            <button key={bm.id} onClick={() => { setCfgBmId(bm.id); setCfgAccountId(''); }}
-                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${cfgBmId === bm.id ? 'var(--primary)' : 'var(--border-light)'}`, background: cfgBmId === bm.id ? 'rgba(139,92,246,0.08)' : 'var(--bg-surface)', cursor: 'pointer', textAlign: 'left' }}>
-                              <div>
-                                <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>{bm.name}</p>
-                                <p style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{bm.id}</p>
-                              </div>
-                              {cfgBmId === bm.id && <Check size={14} color="var(--primary)" />}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+
+                    {/* Mode toggle */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => { setCfgManual(false); setCfgBmId(''); setCfgAccountId(''); setCfgBmSearch(''); }}
+                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `1.5px solid ${!cfgManual ? 'var(--primary)' : 'var(--border-light)'}`, background: !cfgManual ? 'rgba(139,92,246,0.1)' : 'transparent', color: !cfgManual ? 'var(--primary)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                        <Building2 size={13} /> Via Business Manager
+                      </button>
+                      <button onClick={() => { setCfgManual(true); setCfgBmId(''); setCfgAccounts([]); }}
+                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: `1.5px solid ${cfgManual ? 'var(--primary)' : 'var(--border-light)'}`, background: cfgManual ? 'rgba(139,92,246,0.1)' : 'transparent', color: cfgManual ? 'var(--primary)' : 'var(--text-muted)', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                        <Pencil size={13} /> Sem BM / Manual
+                      </button>
                     </div>
 
-                    {/* Conta */}
-                    {cfgBmId && (
-                      <div>
-                        <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Conta de Anúncio</label>
-                        {cfgLoadingAccounts ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Carregando contas...</div>
-                        ) : cfgAccounts.length === 0 ? (
-                          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nenhuma conta ativa nesta BM.</p>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            {cfgAccounts.map(acc => (
-                              <button key={acc.id} onClick={() => setCfgAccountId(acc.id)}
-                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${cfgAccountId === acc.id ? '#10b981' : 'var(--border-light)'}`, background: cfgAccountId === acc.id ? 'rgba(16,185,129,0.07)' : 'var(--bg-surface)', cursor: 'pointer', textAlign: 'left' }}>
-                                <div>
-                                  <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>{acc.name}</p>
-                                  <p style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{acc.id}</p>
+                    {!cfgManual ? (
+                      <>
+                        {/* BM: filtro + select nativo */}
+                        <div>
+                          <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Business Manager</label>
+                          {cfgLoadingBms ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Carregando BMs...</div>
+                          ) : cfgBms.length === 0 ? (
+                            <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nenhuma BM encontrada para este token.</p>
+                          ) : (
+                            <>
+                              <div style={{ position: 'relative', marginBottom: '6px' }}>
+                                <Search size={13} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                                <input value={cfgBmSearch} onChange={e => setCfgBmSearch(e.target.value)} placeholder="Filtrar BM..." style={{ width: '100%', padding: '8px 10px 8px 28px', fontSize: '13px', background: 'var(--bg-surface)', border: '1px solid var(--border-main)', borderRadius: '7px', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = 'var(--primary)'} onBlur={e => e.target.style.borderColor = 'var(--border-main)'} />
+                              </div>
+                              <select value={cfgBmId} onChange={e => { setCfgBmId(e.target.value); setCfgAccountId(''); setCfgAccSearch(''); }} style={{ width: '100%', padding: '9px 10px', fontSize: '13px', background: 'var(--bg-surface)', border: `1px solid ${cfgBmId ? 'var(--primary)' : 'var(--border-main)'}`, borderRadius: '7px', color: cfgBmId ? 'var(--text-main)' : 'var(--text-muted)', outline: 'none', cursor: 'pointer' }}>
+                                <option value="">— Selecionar BM —</option>
+                                {cfgBms.filter(bm => !cfgBmSearch || bm.name.toLowerCase().includes(cfgBmSearch.toLowerCase()) || bm.id.includes(cfgBmSearch)).map(bm => (
+                                  <option key={bm.id} value={bm.id}>{bm.name} ({bm.id})</option>
+                                ))}
+                              </select>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Conta: filtro + select nativo */}
+                        {cfgBmId && (
+                          <div>
+                            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>Conta de Anúncio</label>
+                            {cfgLoadingAccounts ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-muted)' }}><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Carregando contas...</div>
+                            ) : cfgAccounts.length === 0 ? (
+                              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nenhuma conta ativa nesta BM.</p>
+                            ) : (
+                              <>
+                                <div style={{ position: 'relative', marginBottom: '6px' }}>
+                                  <Search size={13} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                                  <input value={cfgAccSearch} onChange={e => setCfgAccSearch(e.target.value)} placeholder="Filtrar conta..." style={{ width: '100%', padding: '8px 10px 8px 28px', fontSize: '13px', background: 'var(--bg-surface)', border: '1px solid var(--border-main)', borderRadius: '7px', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box' }} onFocus={e => e.target.style.borderColor = '#10b981'} onBlur={e => e.target.style.borderColor = 'var(--border-main)'} />
                                 </div>
-                                {cfgAccountId === acc.id && <Check size={14} color="#10b981" />}
-                              </button>
+                                <select value={cfgAccountId} onChange={e => setCfgAccountId(e.target.value)} style={{ width: '100%', padding: '9px 10px', fontSize: '13px', background: 'var(--bg-surface)', border: `1px solid ${cfgAccountId ? '#10b981' : 'var(--border-main)'}`, borderRadius: '7px', color: cfgAccountId ? 'var(--text-main)' : 'var(--text-muted)', outline: 'none', cursor: 'pointer' }}>
+                                  <option value="">— Selecionar Conta —</option>
+                                  {cfgAccounts.filter(a => !cfgAccSearch || a.name?.toLowerCase().includes(cfgAccSearch.toLowerCase()) || a.id.includes(cfgAccSearch)).map(acc => (
+                                    <option key={acc.id} value={acc.id}>{acc.name || acc.id} ({acc.id})</option>
+                                  ))}
+                                </select>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      /* Manual mode */
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '7px' }}>ID da Conta de Anúncio</label>
+                        <input
+                          value={cfgManualId}
+                          onChange={e => setCfgManualId(e.target.value)}
+                          placeholder="Ex: act_123456789  ou apenas  123456789"
+                          style={{ width: '100%', padding: '10px 12px', fontSize: '13px', background: 'var(--bg-surface)', border: '1px solid var(--border-main)', borderRadius: '8px', color: 'var(--text-main)', outline: 'none', boxSizing: 'border-box', fontFamily: 'monospace' }}
+                          onFocus={e => e.target.style.borderColor = 'var(--primary)'}
+                          onBlur={e => e.target.style.borderColor = 'var(--border-main)'}
+                        />
+                        <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px' }}>
+                          Conta fora de BM. O prefixo <code style={{ background: 'var(--bg-app)', padding: '1px 4px', borderRadius: '3px' }}>act_</code> é adicionado automaticamente.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Botão salvar */}
+                    {(() => {
+                      const canSave = cfgManual ? !!cfgManualId.trim() : !!cfgAccountId;
+                      return (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                          <button onClick={() => saveClientConfig(client.id)} disabled={!canSave} className="btn-primary"
+                            style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', opacity: !canSave ? 0.5 : 1, cursor: !canSave ? 'not-allowed' : 'pointer' }}>
+                            {justSaved ? <><Check size={14} /> Salvo!</> : <><Save size={14} /> Salvar para {client.name}</>}
+                          </button>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Gerar Link de Dashboard */}
+                    {saved && (
+                      <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                          <div>
+                            <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)' }}>Dashboard Compartilhável</p>
+                            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Gere um link para o cliente visualizar dados em tempo real.</p>
+                          </div>
+                          <button
+                            onClick={() => openDashLinkModal(client, saved.adAccountId)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', border: '1px solid rgba(200,162,58,0.4)', background: 'rgba(200,162,58,0.08)', color: '#C8A23A', fontSize: '12px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
+                          >
+                            <Share2 size={13} /> Gerar Link
+                          </button>
+                        </div>
+                        {/* Links gerados para este cliente */}
+                        {dashLinks.filter(l => l.clientId === client.id).length > 0 && (
+                          <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {dashLinks.filter(l => l.clientId === client.id).slice(0, 3).map(link => (
+                              <div key={link.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                                <LinkIcon size={12} color="#C8A23A" style={{ flexShrink: 0 }} />
+                                <span style={{ fontSize: '12px', color: 'var(--text-main)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link.label || 'Dashboard sem título'}</span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(link.createdAt).toLocaleDateString('pt-BR')}</span>
+                                <button
+                                  onClick={() => handleCopyDashLink(`${window.location.origin}/dashboard/cliente/${link.token}`)}
+                                  title="Copiar link"
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px', display: 'flex', flexShrink: 0 }}
+                                >
+                                  <Copy size={12} />
+                                </button>
+                                <button
+                                  onClick={() => handleRevokeDashLink(link.id)}
+                                  title="Revogar link"
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', padding: '2px', display: 'flex', flexShrink: 0 }}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
                             ))}
                           </div>
                         )}
                       </div>
                     )}
-
-                    {/* Botão salvar */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                      <button
-                        onClick={() => saveClientConfig(client.id)}
-                        disabled={!cfgBmId || !cfgAccountId}
-                        className="btn-primary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', opacity: (!cfgBmId || !cfgAccountId) ? 0.5 : 1, cursor: (!cfgBmId || !cfgAccountId) ? 'not-allowed' : 'pointer' }}
-                      >
-                        {justSaved ? <><Check size={14} /> Salvo!</> : <><Save size={14} /> Salvar para {client.name}</>}
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Modal: Gerar Link de Dashboard ── */}
+      {dlModal && (
+        <div
+          onClick={() => setDlModal(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: '500px', background: '#1a1a24', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', overflow: 'hidden' }}
+          >
+            {/* Header */}
+            <div style={{ padding: '18px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(200,162,58,0.12)', border: '1px solid rgba(200,162,58,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Share2 size={16} color="#C8A23A" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>Gerar Link de Dashboard</div>
+                  <div style={{ fontSize: '11px', color: '#8b8fa8' }}>{dlModal.client.name}</div>
+                </div>
+              </div>
+              <button onClick={() => setDlModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8b8fa8', display: 'flex' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+              {/* Label */}
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#8b8fa8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>Label (opcional)</label>
+                <input
+                  value={dlLabel}
+                  onChange={e => setDlLabel(e.target.value)}
+                  placeholder="ex: Dashboard Abril 2025"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', background: '#0f0f14', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              {/* Seções permitidas */}
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#8b8fa8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>Seções visíveis</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {DL_SECTIONS_OPTIONS.map(opt => {
+                    const active = dlSections.includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => setDlSections(prev => active ? prev.filter(s => s !== opt.value) : [...prev, opt.value])}
+                        style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', border: `1px solid ${active ? 'rgba(200,162,58,0.5)' : 'rgba(255,255,255,0.1)'}`, background: active ? 'rgba(200,162,58,0.1)' : 'transparent', color: active ? '#C8A23A' : '#8b8fa8', cursor: 'pointer', transition: 'all 0.15s' }}
+                      >
+                        {active ? '✓ ' : ''}{opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Período travado */}
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#8b8fa8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>Período</label>
+                <select
+                  value={dlDateLock}
+                  onChange={e => setDlDateLock(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', background: '#0f0f14', border: '1px solid rgba(255,255,255,0.1)', color: dlDateLock ? '#fff' : '#8b8fa8', fontSize: '13px', outline: 'none', cursor: 'pointer' }}
+                >
+                  {DL_DATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+
+              {/* Senha */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: dlUsePassword ? '8px' : '0' }}>
+                  <label style={{ fontSize: '11px', fontWeight: '600', color: '#8b8fa8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Senha de acesso</label>
+                  <button
+                    onClick={() => setDlUsePassword(p => !p)}
+                    style={{ width: '36px', height: '20px', borderRadius: '10px', border: 'none', background: dlUsePassword ? '#C8A23A' : 'rgba(255,255,255,0.1)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}
+                  >
+                    <span style={{ position: 'absolute', top: '2px', left: dlUsePassword ? '18px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+                  </button>
+                </div>
+                {dlUsePassword && (
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={dlShowPass ? 'text' : 'password'}
+                      value={dlPassword}
+                      onChange={e => setDlPassword(e.target.value)}
+                      placeholder="Digite a senha"
+                      style={{ width: '100%', padding: '9px 40px 9px 12px', borderRadius: '8px', background: '#0f0f14', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                    <button type="button" onClick={() => setDlShowPass(s => !s)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#8b8fa8', display: 'flex' }}>
+                      {dlShowPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Expiração */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: dlUseExpiry ? '8px' : '0' }}>
+                  <label style={{ fontSize: '11px', fontWeight: '600', color: '#8b8fa8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Data de expiração</label>
+                  <button
+                    onClick={() => setDlUseExpiry(p => !p)}
+                    style={{ width: '36px', height: '20px', borderRadius: '10px', border: 'none', background: dlUseExpiry ? '#C8A23A' : 'rgba(255,255,255,0.1)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}
+                  >
+                    <span style={{ position: 'absolute', top: '2px', left: dlUseExpiry ? '18px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+                  </button>
+                </div>
+                {dlUseExpiry && (
+                  <input
+                    type="date"
+                    value={dlExpiry}
+                    onChange={e => setDlExpiry(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', background: '#0f0f14', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '13px', outline: 'none', boxSizing: 'border-box', colorScheme: 'dark' }}
+                  />
+                )}
+              </div>
+
+              {/* Link gerado */}
+              {dlGeneratedLink && (
+                <div style={{ background: 'rgba(200,162,58,0.06)', border: '1px solid rgba(200,162,58,0.2)', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#C8A23A', marginBottom: '8px' }}>✓ Link gerado!</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: '#8b8fa8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{dlGeneratedLink}</span>
+                    <button
+                      onClick={() => handleCopyDashLink(dlGeneratedLink)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', border: '1px solid rgba(200,162,58,0.4)', background: dlCopied ? 'rgba(200,162,58,0.15)' : 'transparent', color: '#C8A23A', fontSize: '12px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
+                    >
+                      {dlCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setDlModal(null)}
+                style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#8b8fa8', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                {dlGeneratedLink ? 'Fechar' : 'Cancelar'}
+              </button>
+              {!dlGeneratedLink && (
+                <button
+                  onClick={handleGenerateDashLink}
+                  disabled={!cfgToken || dlSections.length === 0 || (dlUsePassword && !dlPassword.trim())}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', borderRadius: '8px', border: 'none', background: cfgToken && dlSections.length > 0 ? '#C8A23A' : 'rgba(255,255,255,0.08)', color: cfgToken && dlSections.length > 0 ? '#000' : '#8b8fa8', fontSize: '13px', fontWeight: '700', cursor: cfgToken && dlSections.length > 0 ? 'pointer' : 'default', transition: 'all 0.2s' }}
+                >
+                  <Share2 size={13} /> Gerar Link
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

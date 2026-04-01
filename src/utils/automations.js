@@ -51,11 +51,21 @@ export const fireAutomation = async (trigger, { clientId, cardName, columnName, 
 
     const groups = loadEvoGroups();
     const group  = groups[clientId];
-    if (!group?.jid) return;
+
+    // Destino: grupo (JID @g.us) ou número pessoal (@s.whatsapp.net)
+    const tipo = group?.tipo || 'grupo';
+    let jid;
+    if (tipo === 'numero') {
+      if (!group?.numero) return;
+      const digits = group.numero.replace(/\D/g, '');
+      jid = digits.includes('@') ? digits : `${digits}@s.whatsapp.net`;
+    } else {
+      if (!group?.jid) return;
+      jid = group.jid.includes('@') ? group.jid : `${group.jid}@g.us`;
+    }
 
     const clients    = getClients();
     const clientName = clients.find(c => c.id === clientId)?.name || clientId;
-    const jid        = group.jid.includes('@') ? group.jid : `${group.jid}@g.us`;
     const url        = `${config.baseUrl.replace(/\/$/, '')}/message/sendText/${config.instance}`;
 
     let updated = [...automations];

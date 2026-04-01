@@ -7,6 +7,7 @@ import Clientes from './pages/Clientes';
 import Configuracoes from './pages/Configuracoes';
 import Login from './pages/Login';
 import PortalCliente from './pages/PortalCliente';
+import ClientDashboard from './pages/ClientDashboard';
 import Demandas from './pages/Demandas';
 import Dashboard from './pages/Dashboard';
 import Metricas from './pages/Metricas';
@@ -14,6 +15,7 @@ import Automacoes from './pages/Automacoes';
 import MetaAdCreator from './components/MetaAdCreator';
 import { CHECKLIST_TEMPLATE, CHECKLIST_META_ADS, CHECKLIST_GOOGLE_ADS, CHECKLIST_GENERICO, MOCK_CARDS } from './data/mockData';
 import { fireAutomation } from './utils/automations';
+import { maybeRunAutoCheck } from './utils/balanceAutoCheck';
 import './App.css';
 
 const DEMANDAS_KEY = 'venza_demandas';
@@ -68,6 +70,13 @@ function App() {
     setToast(message);
     setTimeout(() => setToast(null), 5000);
   };
+
+  // ── Auto-check de saldo a cada 5 min (dispara se já passou o intervalo configurado) ──
+  useEffect(() => {
+    maybeRunAutoCheck();
+    const timer = setInterval(maybeRunAutoCheck, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // ── Sincroniza entre abas: quando o Portal (outra aba) salva, o painel atualiza ──
   useEffect(() => {
@@ -181,6 +190,17 @@ function App() {
       return updated;
     });
   };
+
+  // ── Rota Pública: Dashboard do Cliente (/dashboard/cliente/:token) ──
+  const isDashboardClientRoute = window.location.pathname.startsWith('/dashboard/cliente/');
+  if (isDashboardClientRoute) {
+    return (
+      <Routes>
+        <Route path="/dashboard/cliente/:token" element={<ClientDashboard />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
+  }
 
   // ── Rota Pública: Portal do Cliente (/portal/:clientId) ──
   const isPortalRoute = window.location.pathname.startsWith('/portal/');
