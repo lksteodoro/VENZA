@@ -12,6 +12,7 @@ import Demandas from './pages/Demandas';
 import Dashboard from './pages/Dashboard';
 import Metricas from './pages/Metricas';
 import Automacoes from './pages/Automacoes';
+import Tracking from './pages/Tracking';
 import MetaAdCreator from './components/MetaAdCreator';
 import { CHECKLIST_TEMPLATE, CHECKLIST_META_ADS, CHECKLIST_GOOGLE_ADS, CHECKLIST_GENERICO, MOCK_CARDS } from './data/mockData';
 import { fireAutomation } from './utils/automations';
@@ -248,6 +249,7 @@ function App() {
           <Route path="/metricas" element={<Metricas />} />
           <Route path="/clientes" element={<Clientes demandas={demandas} />} />
           <Route path="/configuracoes" element={<Configuracoes />} />
+          <Route path="/tracking"     element={<Tracking />} />
           <Route path="/automacoes"   element={<Automacoes />} />
           <Route path="*" element={<Navigate to="/demandas" replace />} />
         </Routes>

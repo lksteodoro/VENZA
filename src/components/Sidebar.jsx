@@ -1,12 +1,13 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Users, Settings, Inbox, CheckSquare, PlusCircle, LayoutDashboard, BarChart2, Zap } from 'lucide-react';
+import { Users, Settings, Inbox, CheckSquare, PlusCircle, LayoutDashboard, BarChart2, Zap, TrendingUp } from 'lucide-react';
 
 import '../App.css';
 
 const NAV_ITEMS = [
   { to: '/dashboard',    icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
   { to: '/demandas',     icon: <Inbox size={18} />,           label: 'Demandas' },
+  { to: '/tracking',     icon: <TrendingUp size={18} />,      label: 'DemandOS · Tracking' },
   { to: '/metricas',     icon: <BarChart2 size={18} />,       label: 'Métricas' },
   { to: '/kanban',       icon: <CheckSquare size={18} />,     label: 'Execução (Ads)' },
   { to: '/clientes',     icon: <Users size={18} />,           label: 'Clientes & Projetos' },

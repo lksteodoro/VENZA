@@ -42,6 +42,11 @@ body {
   height: 100vh;
 }
 
+body.public-route {
+  overflow: auto;
+  height: auto;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
