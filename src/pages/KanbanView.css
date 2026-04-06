@@ -1,0 +1,297 @@
+/* ═══════════════════════════════════════════════════════════
+   KANBAN VIEW
+═══════════════════════════════════════════════════════════ */
+
+.kv-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ════════════════════════════
+   TOOLBAR
+════════════════════════════ */
+
+.kv-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 20px;
+  background: rgba(18, 18, 20, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  flex-shrink: 0;
+}
+
+/* ════════════════════════════
+   KPIs
+════════════════════════════ */
+
+.kv-kpis {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.kv-kpi {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.kv-kpi-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--kpi-color, #8b5cf6);
+  box-shadow: 0 0 5px var(--kpi-color, #8b5cf6);
+  flex-shrink: 0;
+}
+
+.kv-kpi-label {
+  font-weight: 500;
+  font-size: 11px;
+}
+
+.kv-kpi-count {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--kpi-color, var(--text-main));
+}
+
+.kv-kpi--total {
+  --kpi-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.07);
+  border-color: rgba(139, 92, 246, 0.18);
+  gap: 6px;
+  margin-left: 6px;
+}
+.kv-kpi--total svg { color: #8b5cf6; }
+.kv-kpi--total .kv-kpi-count { color: #c4b5fd; }
+
+/* ════════════════════════════
+   DROPDOWN TRIGGER
+════════════════════════════ */
+
+.kv-dropdown-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.kv-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-family: inherit;
+  white-space: nowrap;
+  min-width: 170px;
+}
+
+.kv-dropdown-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-main);
+}
+
+.kv-dropdown-trigger--open {
+  border-color: rgba(139, 92, 246, 0.4);
+  background: rgba(139, 92, 246, 0.07);
+  color: var(--text-main);
+}
+
+.kv-dropdown-trigger--active {
+  border-color: rgba(139, 92, 246, 0.35);
+  background: rgba(139, 92, 246, 0.08);
+  color: var(--text-main);
+}
+
+.kv-trigger-icon { color: var(--text-muted); flex-shrink: 0; }
+
+.kv-trigger-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.kv-trigger-avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #6d28d9, #4f46e5);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.kv-trigger-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+}
+
+.kv-trigger-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.2);
+  color: #c4b5fd;
+}
+
+.kv-trigger-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.kv-trigger-chevron--open {
+  transform: rotate(180deg);
+}
+
+/* ════════════════════════════
+   DROPDOWN MENU
+════════════════════════════ */
+
+.kv-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 230px;
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.04);
+  overflow: hidden;
+  z-index: 100;
+  animation: kv-dropdown-in 0.15s ease-out;
+}
+
+@keyframes kv-dropdown-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+.kv-dropdown-header {
+  padding: 10px 14px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.kv-dropdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 3px 0;
+}
+
+/* ── Item ── */
+.kv-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: left;
+  transition: background 0.14s, color 0.14s;
+}
+
+.kv-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+}
+
+.kv-dropdown-item--selected {
+  color: var(--text-main);
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.kv-item-avatar-wrap {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.kv-item-icon-all {
+  color: var(--text-muted);
+}
+
+.kv-item-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.kv-item-avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #6d28d9, #4f46e5);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  width: 28px;
+  height: 28px;
+}
+
+.kv-item-name {
+  flex: 1;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kv-item-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.kv-dropdown-item--selected .kv-item-count {
+  background: rgba(139, 92, 246, 0.18);
+  color: #c4b5fd;
+}
+
+.kv-item-check {
+  color: var(--primary);
+  flex-shrink: 0;
+}

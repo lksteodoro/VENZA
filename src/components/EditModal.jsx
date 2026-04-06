@@ -1,9 +1,16 @@
 import React, { useState } from 'react';
-import { X, FileText, ExternalLink, PlayCircle, Zap } from 'lucide-react';
+import { X, FileText, ExternalLink, PlayCircle, Zap, MessageSquare, User, Settings2, Send } from 'lucide-react';
 import { CLIENTS } from '../data/mockData';
 import MetaAdCreator from './MetaAdCreator';
 import GoogleAdCreator from './GoogleAdCreator';
 import './EditModal.css';
+
+const SectionLabel = ({ icon: Icon, label }) => (
+  <div className="em-section-label">
+    <Icon size={13} />
+    <span>{label}</span>
+  </div>
+);
 
 const EditModal = ({ card, onClose, onSave }) => {
   const [formData, setFormData] = useState({ ...card });
@@ -38,54 +45,48 @@ const EditModal = ({ card, onClose, onSave }) => {
 
           {/* Briefing do Cliente (portal-origin) */}
           {formData.fromPortal && (
-            <div style={{
-              background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)',
-              borderRadius: '10px', padding: '16px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+            <div className="em-briefing">
+              <div className="em-briefing-header">
                 <FileText size={14} color="var(--primary)" />
-                <span style={{ color: 'var(--primary)', fontWeight: '700', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Briefing do Cliente
-                </span>
+                <span>Briefing do Cliente</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                <div>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Tipo: </span>
-                  <span style={{ color: 'var(--text-main)' }}>{formData.demandaTipo}</span>
+              <div className="em-briefing-body">
+                <div className="em-briefing-row">
+                  <span className="em-briefing-label">Tipo:</span>
+                  <span>{formData.demandaTipo}</span>
                 </div>
-                <div>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Prioridade: </span>
+                <div className="em-briefing-row">
+                  <span className="em-briefing-label">Prioridade:</span>
                   <span style={{ color: formData.demandaPrioridade === 'urgente' ? '#ef4444' : formData.demandaPrioridade === 'alta' ? '#f59e0b' : 'var(--text-main)', fontWeight: '700' }}>
                     {formData.demandaPrioridade?.toUpperCase()}
                   </span>
                 </div>
                 {formData.demandaDescricao && (
                   <div>
-                    <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Briefing: </span>
-                    <p style={{ color: 'var(--text-main)', marginTop: '4px', lineHeight: '1.55', whiteSpace: 'pre-wrap', fontSize: '13px' }}>
-                      {formData.demandaDescricao}
-                    </p>
+                    <span className="em-briefing-label">Briefing:</span>
+                    <p className="em-briefing-desc">{formData.demandaDescricao}</p>
                   </div>
                 )}
                 {formData.demandaJustificativa && (
-                  <div style={{ background: 'rgba(239,68,68,0.06)', borderRadius: '6px', padding: '8px 10px' }}>
-                    <span style={{ color: '#ef4444', fontWeight: '600' }}>⚠ Urgência: </span>
-                    <span style={{ color: '#ef4444' }}>{formData.demandaJustificativa}</span>
+                  <div className="em-briefing-urgency">
+                    <span>⚠ Urgência: </span>
+                    <span>{formData.demandaJustificativa}</span>
                   </div>
                 )}
                 {formData.demandaArquivo && (
-                  <a href={formData.demandaArquivo} target="_blank" rel="noreferrer" style={{
-                    color: 'var(--primary)', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '5px', textDecoration: 'none'
-                  }}>
+                  <a href={formData.demandaArquivo} target="_blank" rel="noreferrer" className="em-briefing-link">
                     <ExternalLink size={13} /> Ver referência / Drive
                   </a>
                 )}
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', paddingTop: '8px', borderTop: '1px solid rgba(139,92,246,0.15)' }}>
+                <div className="em-briefing-footer">
                   Recebido em {formData.demandaCriadoEm} · {formData.clientName}
                 </div>
               </div>
             </div>
           )}
+
+          {/* ── Seção: Identificação ── */}
+          <SectionLabel icon={User} label="Identificação" />
 
           {/* Título */}
           <div className="form-group">
@@ -98,27 +99,31 @@ const EditModal = ({ card, onClose, onSave }) => {
             />
           </div>
 
-          <div className="form-group">
-            <label>Horário</label>
-            <input
-              type="time" className="input-field"
-              value={formData.time}
-              onChange={e => setFormData({ ...formData, time: e.target.value })}
-            />
+          <div className="form-row">
+            <div className="form-group flex-1">
+              <label>Horário</label>
+              <input
+                type="time" className="input-field"
+                value={formData.time}
+                onChange={e => setFormData({ ...formData, time: e.target.value })}
+              />
+            </div>
+            {/* Cliente */}
+            <div className="form-group flex-2">
+              <label>Cliente</label>
+              <select
+                className="input-field custom-select"
+                value={formData.clientId || ''}
+                onChange={e => setFormData({ ...formData, clientId: e.target.value })}
+              >
+                <option value="">Selecione um cliente</option>
+                {CLIENTS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
           </div>
 
-          {/* Cliente */}
-          <div className="form-group">
-            <label>Cliente</label>
-            <select
-              className="input-field custom-select"
-              value={formData.clientId || ''}
-              onChange={e => setFormData({ ...formData, clientId: e.target.value })}
-            >
-              <option value="">Selecione um cliente</option>
-              {CLIENTS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
+          {/* ── Seção: Campanha ── */}
+          <SectionLabel icon={Settings2} label="Campanha" />
 
           {/* Plataforma + Objetivo */}
           <div className="form-row">
@@ -182,25 +187,43 @@ const EditModal = ({ card, onClose, onSave }) => {
               placeholder="https://..."
             />
           </div>
+
+          {/* ── Seção: Comentário / Observação ── */}
+          <SectionLabel icon={MessageSquare} label="Comentário / Observação" />
+          <div className="form-group">
+            <label>
+              Observação interna
+              <span className="em-label-hint">Enviado junto na automação do WhatsApp ao mover o card</span>
+            </label>
+            <textarea
+              className="input-field em-textarea"
+              rows={3}
+              value={formData.comentario || ''}
+              onChange={e => setFormData({ ...formData, comentario: e.target.value })}
+              placeholder="Ex: Aprovado pelo cliente. Aguardando arte final..."
+            />
+            {formData.comentario && (
+              <div className="em-comment-preview">
+                <Send size={11} />
+                <span>Este comentário será incluído na mensagem de automação do WhatsApp</span>
+              </div>
+            )}
+          </div>
+
         </div>
 
         {/* Botões de Publicação */}
         {(isMeta || isGoogle || isTikTok) && (
-          <div style={{ padding: '0 24px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Publicar Campanha
+          <div className="em-publish-section">
+            <div className="em-section-label" style={{ marginBottom: '10px' }}>
+              <Settings2 size={13} />
+              <span>Publicar Campanha</span>
             </div>
 
             {isMeta && (
               <button
                 onClick={() => setShowMetaCreator(true)}
-                style={{
-                  width: '100%', padding: '13px', borderRadius: '10px',
-                  background: 'linear-gradient(135deg, #1877F2, #0056d6)', color: 'white',
-                  border: 'none', fontWeight: '700', fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  boxShadow: '0 4px 14px rgba(24,119,242,0.3)',
-                }}
+                className="em-publish-btn em-publish-meta"
               >
                 <PlayCircle size={17} /> Publicar via Meta Ads API
               </button>
@@ -209,20 +232,14 @@ const EditModal = ({ card, onClose, onSave }) => {
             {isGoogle && (
               <button
                 onClick={() => setShowGoogleCreator(true)}
-                style={{
-                  width: '100%', padding: '13px', borderRadius: '10px',
-                  background: 'linear-gradient(135deg, #34a853, #0f9d58)', color: 'white',
-                  border: 'none', fontWeight: '700', fontSize: '14px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  boxShadow: '0 4px 14px rgba(52,168,83,0.3)',
-                }}
+                className="em-publish-btn em-publish-google"
               >
                 <Zap size={17} /> Publicar via Google Ads API
               </button>
             )}
 
             {isTikTok && (
-              <div style={{ padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border-light)', background: 'var(--bg-app)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="em-publish-tiktok">
                 <span style={{ fontSize: '20px' }}>🎵</span>
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>TikTok Ads</div>
