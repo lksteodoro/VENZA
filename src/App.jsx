@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import Sidebar from './components/Sidebar';
@@ -14,9 +14,12 @@ import Metricas from './pages/Metricas';
 import Automacoes from './pages/Automacoes';
 import Tracking from './pages/Tracking';
 import MetaAdCreator from './components/MetaAdCreator';
-import { CHECKLIST_TEMPLATE, CHECKLIST_META_ADS, CHECKLIST_GOOGLE_ADS, CHECKLIST_GENERICO, MOCK_CARDS } from './data/mockData';
-import { fireAutomation } from './utils/automations';
+import { CHECKLIST_META_ADS, CHECKLIST_GOOGLE_ADS, CHECKLIST_GENERICO, MOCK_CARDS } from './data/mockData';
+import { fireAutomation, checkAndFireScheduled } from './utils/automations';
+import { calcBusinessHours } from './utils/businessHours';
 import { maybeRunAutoCheck } from './utils/balanceAutoCheck';
+import { flushPendingNotifications, getBatchStatus } from './utils/taskNotificationBatcher';
+import { checkAndFireWeeklySummary } from './utils/weeklySummary';
 import './App.css';
 
 const DEMANDAS_KEY = 'venza_demandas';
@@ -76,6 +79,70 @@ function App() {
   useEffect(() => {
     maybeRunAutoCheck();
     const timer = setInterval(maybeRunAutoCheck, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // ── Automações agendadas (diário/semanal/mensal) — verifica a cada 60s ──
+  useEffect(() => {
+    checkAndFireScheduled();
+    checkAndFireWeeklySummary();
+    const timer = setInterval(() => {
+      checkAndFireScheduled();
+      checkAndFireWeeklySummary();
+    }, 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // ── Alerta de atividade parada (+3h úteis em Pendente) — verifica a cada 5 min ──
+  useEffect(() => {
+    const checkStalled = async () => {
+      const now = new Date();
+      const day = now.getDay();
+      const h   = now.getHours();
+      if (day === 0 || day === 6 || h < 9 || h >= 18) return; // só em horário comercial
+
+      // Lê direto do localStorage para evitar closure stale
+      let cards;
+      try { cards = JSON.parse(localStorage.getItem(KANBAN_KEY) || '[]'); } catch { return; }
+
+      let changed = false;
+      const updated = cards.map(card => {
+        if (card.columnId !== 'pendente' || !card.pendenteSince) return card;
+        const bh = calcBusinessHours(card.pendenteSince, now);
+        if (bh < 3) return card;
+        // Re-dispara no máximo a cada 4h para não spammar
+        if (card.stalledAlertFiredAt && (now - new Date(card.stalledAlertFiredAt)) < 4 * 3600000) return card;
+
+        fireAutomation('atividade_parada', {
+          clientId:    card.clientId,
+          cardName:    card.title || '',
+          columnName:  'Pendente',
+          projectName: card.projectName || card.tag || '',
+        });
+        changed = true;
+        return { ...card, stalledAlertFiredAt: now.toISOString() };
+      });
+
+      if (changed) setKanbanCards(updated);
+    };
+
+    checkStalled();
+    const timer = setInterval(checkStalled, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []); // lê localStorage diretamente — sem dependência de estado
+
+  // ── Flush de notificações batch de atividades (a cada 60s) ──
+  useEffect(() => {
+    const check = async () => {
+      const pending = getBatchStatus();
+      if (pending.length === 0) return;
+      // Só tenta disparar se algum cliente já completou os 5 min
+      const ready = pending.filter(p => p.remainingSec === 0);
+      if (ready.length === 0) return;
+      await flushPendingNotifications();
+    };
+    check(); // verifica imediatamente ao montar
+    const timer = setInterval(check, 60 * 1000); // verifica a cada 60s
     return () => clearInterval(timer);
   }, []);
 
@@ -179,8 +246,10 @@ function App() {
       demandaObjetivo: demanda.objetivo,
       demandaOrcamento: demanda.orcamento,
       demandaPublico: demanda.publico,
+      createdAt: new Date().toISOString(),
+      pendenteSince: new Date().toISOString(),
     };
-    setKanbanCards(prev => [newCard, ...prev]);
+    setKanbanCards(prev => [...prev, newCard]);
   };
 
   // ── Rejeição de Demanda ──
@@ -247,7 +316,7 @@ function App() {
           <Route path="/demandas" element={<Demandas demandas={demandas} onApprove={handleApproveDemanda} onReject={handleRejectDemanda} onSubmitDemanda={handleSubmitDemanda} />} />
           <Route path="/kanban" element={<KanbanView cards={kanbanCards} setCards={setKanbanCards} />} />
           <Route path="/metricas" element={<Metricas />} />
-          <Route path="/clientes" element={<Clientes demandas={demandas} />} />
+          <Route path="/clientes" element={<Clientes demandas={demandas} kanbanCards={kanbanCards} setKanbanCards={setKanbanCards} />} />
           <Route path="/configuracoes" element={<Configuracoes />} />
           <Route path="/tracking"     element={<Tracking />} />
           <Route path="/automacoes"   element={<Automacoes />} />

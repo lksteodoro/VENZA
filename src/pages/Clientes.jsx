@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { CLIENTS, ACCOUNTS, PROJECTS, BASE_SUBTASKS } from '../data/mockData';
+import { CLIENTS, ACCOUNTS, PROJECTS, BASE_SUBTASKS, CHECKLIST_GENERICO } from '../data/mockData';
 import AdsManagerTable from '../components/AdsManagerTable';
 import ProjectCard from '../components/ProjectTaskManager';
 import MetaAdCreator from '../components/MetaAdCreator';
 import { LayoutDashboard, FolderOpen, Plus, CheckCircle2, AlertCircle, Clock, Camera, Inbox, ExternalLink, Cog, Loader2, Database } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { queueTaskNotification } from '../utils/taskNotificationBatcher';
 
 const META_API = 'https://graph.facebook.com/v21.0';
 
@@ -323,7 +324,7 @@ const loadFromStorage = (key, fallback) => {
   } catch { return fallback; }
 };
 
-const Clientes = ({ demandas = [] }) => {
+const Clientes = ({ demandas = [], setKanbanCards }) => {
   const [clients, setClients] = useState(() => loadFromStorage(CLIENTS_KEY, CLIENTS));
   const [selectedClient, setSelectedClient] = useState(() => {
     const cs = loadFromStorage(CLIENTS_KEY, CLIENTS);
@@ -405,11 +406,55 @@ const Clientes = ({ demandas = [] }) => {
         subtasks = BASE_SUBTASKS.map(s => ({ ...s, id: uuidv4(), done: false }));
       }
     }
+    const taskId = uuidv4();
     setProjects(prev => prev.map(p =>
       p.id === projectId
-        ? { ...p, tasks: [...p.tasks, { id: uuidv4(), text, completed: false, type, subtasks, priority, dueDate }] }
+        ? { ...p, tasks: [...p.tasks, { id: taskId, text, completed: false, type, subtasks, priority, dueDate }] }
         : p
     ));
+
+    // ── Espelhar no Kanban (Execução Ads) ──
+    if (setKanbanCards) {
+      const proj    = projects.find(p => p.id === projectId);
+      const client  = clients.find(c => c.id === proj?.clientId);
+      const checklist = type === 'recurrent' && subtasks.length > 0
+        ? subtasks.map(s => ({ id: uuidv4(), text: s.text, completed: false }))
+        : CHECKLIST_GENERICO.map(s => ({ ...s, id: uuidv4(), completed: false }));
+
+      const newCard = {
+        id:              uuidv4(),
+        title:           text,
+        time:            new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        clientId:        client?.id || '',
+        clientName:      client?.name || '',
+        columnId:        'pendente',
+        type:            'subir',
+        tag:             proj?.name || 'Projeto',
+        projectId:       projectId,
+        projectName:     proj?.name || '',
+        priority,
+        dueDate,
+        wabas:           [],
+        contactsList:    '-',
+        linkComplete:    '',
+        linkShort:       '',
+        checklist,
+        messageLabel:    `Projeto: ${proj?.name || ''}`,
+        fromProject:     true,
+        sourceTaskId:    taskId,
+      };
+      setKanbanCards(prev => [newCard, ...prev]);
+
+      // ── Enfileira para notificação batch (disparada em 5 minutos) ──
+      if (client?.id) {
+        queueTaskNotification({
+          clientId:    client.id,
+          clientName:  client.name || '',
+          projectName: proj?.name || '',
+          taskText:    text,
+        });
+      }
+    }
   };
 
   const handleUpdateTask = (projectId, taskId, field, value) => {

@@ -1238,7 +1238,7 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
 
   return (
     <div className="modal-overlay" style={{ zIndex: 9999 }}>
-      <div style={{ width: '820px', maxWidth: '96vw', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-light)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 48px rgba(0,0,0,0.5)', height: '88vh' }}>
+      <div style={{ width: activeTab === 3 ? '1100px' : '820px', maxWidth: '97vw', backgroundColor: 'var(--bg-app)', border: '1px solid var(--border-light)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 48px rgba(0,0,0,0.5)', height: '90vh', transition: 'width 0.25s ease' }}>
 
         {/* Header */}
         <div style={{ padding: '18px 24px', backgroundColor: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
@@ -1308,7 +1308,7 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
           </div>
 
           {/* Conteúdo */}
-          <div style={{ flex: 1, padding: '28px', overflowY: 'auto' }}>
+          <div style={{ flex: 1, padding: activeTab === 3 ? '16px' : '28px', overflowY: activeTab === 3 ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             {loadingApi ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', color: 'var(--text-muted)', gap: '12px' }}>
                 <Loader2 size={32} color="var(--primary)" style={{ animation: 'spin 1s linear infinite' }} />
@@ -1780,40 +1780,121 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
                 )}
 
                 {/* ── ABA 3: Anúncios (lote) ── */}
-                {activeTab === 3 && (
-                  <div style={{ display: 'flex', gap: '24px', height: '100%' }}>
-                    {/* Esquerda: Upload */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <h3 style={{ fontSize: '17px', fontWeight: '700', color: 'var(--text-main)' }}>Criativos — até 20 mídias</h3>
+                {activeTab === 3 && (() => {
+                  const activeId = activeCopyFileId || (mediaFiles[0]?.id ?? null);
+                  const activeIdx = mediaFiles.findIndex(m => m.id === activeId);
+                  const activeMedia = mediaFiles[activeIdx] ?? null;
 
-                      <label style={{ background: 'var(--bg-surface)', border: '2px dashed rgba(139,92,246,0.3)', padding: '24px', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'border-color 0.2s' }}>
+                  /* Empty state */
+                  if (mediaFiles.length === 0) return (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '24px' }}>
+                      <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', cursor: 'pointer', padding: '48px 60px', borderRadius: '20px', border: '2px dashed rgba(139,92,246,0.35)', background: 'rgba(139,92,246,0.04)', transition: 'all 0.2s', width: '100%', maxWidth: '420px', boxSizing: 'border-box' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.7)'; e.currentTarget.style.background = 'rgba(139,92,246,0.08)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.35)'; e.currentTarget.style.background = 'rgba(139,92,246,0.04)'; }}
+                      >
                         <input type="file" multiple accept="image/*,video/*" style={{ display: 'none' }} onChange={handleFileUpload} />
-                        <UploadCloud size={30} color="var(--primary)" style={{ marginBottom: '8px' }} />
-                        <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--primary)' }}>Upload Múltiplo</span>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Imagens JPG/PNG ou Vídeos MP4</span>
+                        <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(24,119,242,0.15))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <UploadCloud size={36} color="var(--primary)" />
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '6px' }}>Arraste ou clique para fazer upload</div>
+                          <div style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.5 }}>Imagens JPG/PNG ou Vídeos MP4 · até 20 arquivos</div>
+                        </div>
+                      </label>
+                      <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
+                        {[['🖼️', 'Imagens', 'JPG, PNG, WEBP'], ['🎬', 'Vídeos', 'MP4, MOV, AVI'], ['📦', 'Lote', 'até 20 de uma vez']].map(([icon, title, sub]) => (
+                          <div key={title} style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '22px', marginBottom: '4px' }}>{icon}</div>
+                            <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)' }}>{title}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{sub}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+
+                  return (
+                  <div style={{ display: 'flex', gap: '0', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+
+                    {/* ── Faixa de thumbnails (lateral esquerda) ── */}
+                    <div style={{ width: individualCopyMode ? '88px' : '160px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', paddingRight: '10px', borderRight: '1px solid var(--border-light)', marginRight: '16px' }}>
+                      <label style={{ background: 'var(--bg-surface)', border: '2px dashed rgba(139,92,246,0.3)', borderRadius: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px 6px', flexShrink: 0, gap: '4px' }}>
+                        <input type="file" multiple accept="image/*,video/*" style={{ display: 'none' }} onChange={handleFileUpload} />
+                        <UploadCloud size={18} color="var(--primary)" />
+                        <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--primary)', textAlign: 'center', lineHeight: 1.2 }}>Upload ({mediaFiles.length})</span>
                       </label>
 
-                      {mediaFiles.length > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '10px', overflowY: 'auto', maxHeight: '200px' }}>
-                          {mediaFiles.map((m, idx) => (
-                            <div key={m.id} style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-main)', background: '#000', aspectRatio: '1/1' }}>
-                              {m.type === 'IMAGE'
-                                ? <img src={m.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.85 }} />
-                                : <video src={m.preview} muted preload="metadata" playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.85 }} />}
-                              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '5px', background: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)' }}>
-                                <span style={{ color: 'white', fontSize: '10px', fontWeight: '800' }}>#{idx + 1}</span>
-                              </div>
-                              <button onClick={() => removeMedia(m.id)} style={{ position: 'absolute', top: '5px', right: '5px', background: '#ef4444', border: 'none', color: 'white', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                                <X size={11} />
-                              </button>
+                      {mediaFiles.map((m, idx) => {
+                        const isActive = individualCopyMode && m.id === activeId;
+                        const hasAny = Object.keys(adCopyOverrides[m.id] || {}).length > 0;
+                        return (
+                          <div key={m.id}
+                            onClick={() => { if (individualCopyMode) setActiveCopyFileId(m.id); }}
+                            style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', background: '#000', aspectRatio: '1/1', flexShrink: 0, cursor: individualCopyMode ? 'pointer' : 'default', border: isActive ? '2px solid var(--primary)' : '2px solid transparent', boxShadow: isActive ? '0 0 0 2px rgba(139,92,246,0.3)' : 'none', transition: 'all 0.15s' }}
+                          >
+                            {m.type === 'IMAGE'
+                              ? <img src={m.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isActive ? 1 : 0.7 }} />
+                              : <video src={m.preview} muted preload="metadata" playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isActive ? 1 : 0.7 }} />}
+                            {/* Badge número */}
+                            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '3px 5px', background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                              <span style={{ color: isActive ? '#a78bfa' : 'white', fontSize: '9px', fontWeight: '800' }}>AD{String(idx + 1).padStart(2, '0')}</span>
+                              {hasAny && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />}
                             </div>
-                          ))}
-                        </div>
-                      )}
+                            {/* Botão remover */}
+                            <button onClick={e => { e.stopPropagation(); removeMedia(m.id); }} style={{ position: 'absolute', top: '3px', right: '3px', background: 'rgba(239,68,68,0.85)', border: 'none', color: 'white', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', opacity: 0, transition: 'opacity 0.15s' }}
+                              onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                              onMouseLeave={e => e.currentTarget.style.opacity = 0}
+                            >
+                              <X size={9} />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
 
+                    {/* ── Preview grande do anúncio ativo (só no modo individual) ── */}
+                    {individualCopyMode && activeMedia && (
+                      <div style={{ width: '230px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', marginRight: '16px', overflowY: 'auto' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Preview — AD{String(activeIdx + 1).padStart(2, '0')}
+                        </div>
+                        <div style={{ borderRadius: '10px', overflow: 'hidden', border: '2px solid var(--primary)', background: '#000', aspectRatio: '4/5', width: '100%', position: 'relative' }}>
+                          {activeMedia.type === 'IMAGE'
+                            ? <img src={activeMedia.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                            : <video src={activeMedia.preview} controls muted playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={activeMedia.file.name}>
+                          {activeMedia.file.name}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                          {activeMedia.type} · {(activeMedia.file.size / 1024 / 1024).toFixed(1)} MB
+                        </div>
+                        {/* Navegação rápida */}
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                          <button onClick={() => { const prev = mediaFiles[activeIdx - 1]; if (prev) setActiveCopyFileId(prev.id); }}
+                            disabled={activeIdx === 0}
+                            style={{ flex: 1, padding: '5px', borderRadius: '6px', border: '1px solid var(--border-main)', background: 'transparent', color: activeIdx === 0 ? 'var(--border-main)' : 'var(--text-muted)', cursor: activeIdx === 0 ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: '700' }}>
+                            ‹
+                          </button>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', fontWeight: '600' }}>{activeIdx + 1}/{mediaFiles.length}</span>
+                          <button onClick={() => { const next = mediaFiles[activeIdx + 1]; if (next) setActiveCopyFileId(next.id); }}
+                            disabled={activeIdx === mediaFiles.length - 1}
+                            style={{ flex: 1, padding: '5px', borderRadius: '6px', border: '1px solid var(--border-main)', background: 'transparent', color: activeIdx === mediaFiles.length - 1 ? 'var(--border-main)' : 'var(--text-muted)', cursor: activeIdx === mediaFiles.length - 1 ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: '700' }}>
+                            ›
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Esquerda: area de upload no modo global (quando não individual) */}
+                    {!individualCopyMode && (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px', overflow: 'hidden' }}>
+                      <h3 style={{ fontSize: '17px', fontWeight: '700', color: 'var(--text-main)', flexShrink: 0 }}>Criativos — até 20 mídias</h3>
+                    </div>
+                    )}
+
                     {/* Direita: Copy */}
-                    <div style={{ width: '320px', flexShrink: 0, borderLeft: '1px solid var(--border-light)', paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto' }}>
+                    <div style={{ flex: 1, minWidth: 0, borderLeft: '1px solid var(--border-light)', paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto' }}>
                       <Field label="Nomenclatura do Anúncio" value={adsData.namingPattern} onChange={e => setAdsData({ ...adsData, namingPattern: e.target.value })} placeholder="AD{index}_DDMM_{index}" />
                       <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '-8px', lineHeight: '1.4' }}>
                         <strong style={{ color: 'var(--text-main)' }}>{'{index}'}</strong> → 01, 02... &nbsp;|&nbsp; <strong style={{ color: 'var(--text-main)' }}>{'{date}'}</strong> → {todayDDMM}
@@ -1849,10 +1930,8 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
                         </div>
                       </div>
 
-                      {/* ── Seletor de anúncio (modo individual) ── */}
+                      {/* ── Campos individuais por anúncio ── */}
                       {individualCopyMode && mediaFiles.length > 0 && (() => {
-                        const activeId = activeCopyFileId || mediaFiles[0].id;
-                        const activeIdx = mediaFiles.findIndex(m => m.id === activeId);
                         const overrides = adCopyOverrides[activeId] || {};
                         const hasOverride = (f) => overrides[f] !== undefined;
                         const getVal = (f) => hasOverride(f) ? overrides[f] : adsData[f];
@@ -1861,24 +1940,10 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
 
                         return (
                           <>
-                            {/* Tabs de seleção */}
-                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                              {mediaFiles.map((m, idx) => {
-                                const isActive = m.id === activeId;
-                                const hasAny = Object.keys(adCopyOverrides[m.id] || {}).length > 0;
-                                return (
-                                  <button key={m.id} onClick={() => setActiveCopyFileId(m.id)} style={{ position: 'relative', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border-light)'}`, background: isActive ? 'rgba(139,92,246,0.12)' : 'var(--bg-surface)', color: isActive ? 'var(--primary)' : 'var(--text-muted)', cursor: 'pointer' }}>
-                                    AD{String(idx + 1).padStart(2, '0')}
-                                    {hasAny && <span style={{ position: 'absolute', top: '-3px', right: '-3px', width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', border: '1px solid var(--bg-app)' }} />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-
                             {/* Label do ad ativo */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(139,92,246,0.08)', borderRadius: '8px', border: '1px solid rgba(139,92,246,0.2)' }}>
                               <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--primary)' }}>
-                                {resolveAdName(adsData.namingPattern, activeIdx + 1)} — {mediaFiles[activeIdx]?.file?.name}
+                                {resolveAdName(adsData.namingPattern, activeIdx + 1)}
                               </span>
                               {Object.keys(overrides).length > 0 && (
                                 <button onClick={() => setAdCopyOverrides(prev => ({ ...prev, [activeId]: {} }))} style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '4px', border: '1px solid var(--border-main)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
@@ -2023,7 +2088,8 @@ const MetaAdCreator = ({ card, onClose, onComplete, projectId }) => {
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
               </>
             )}
           </div>
