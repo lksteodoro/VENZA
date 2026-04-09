@@ -65,8 +65,15 @@ function App() {
 
   // ── Persiste kanbanCards ──
   useEffect(() => {
-    localStorage.setItem(KANBAN_KEY, JSON.stringify(kanbanCards));
+    try {
+      localStorage.setItem(KANBAN_KEY, JSON.stringify(kanbanCards));
+    } catch (e) {
+      console.warn('[CRM] localStorage cheio ao salvar kanbanCards:', e);
+    }
   }, [kanbanCards]);
+
+  // ── Modal rápido de criação de anúncio ──
+  const [quickAdOpen, setQuickAdOpen] = useState(false);
 
   // ── Notificação Toast ──
   const [toast, setToast] = useState(null);
@@ -295,7 +302,6 @@ function App() {
 
   const pendingDemandas = demandas.filter(d => d.status === 'pendente').length;
 
-  const [quickAdOpen, setQuickAdOpen] = useState(false);
   const quickAdCard = {
     id: uuidv4(),
     title: 'Nova Campanha',
