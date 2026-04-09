@@ -209,7 +209,7 @@ const AdCard = ({ group, token }) => {
       if (match?.[1]) {
         window.open(match[1].replace(/&amp;/g, '&'), '_blank');
       }
-    } catch (_) { /* silencioso */ } finally {
+    } catch { /* silencioso */ } finally {
       setLoadingLink(false);
     }
   };
@@ -313,7 +313,7 @@ const AdCard = ({ group, token }) => {
           {/* Lista expandida de instâncias */}
           {isGrouped && expanded && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '2px' }}>
-              {instances.map((inst, i) => (
+              {instances.map((inst) => (
                 <div key={inst.id} style={{ padding: '7px 10px', borderRadius: '7px', background: 'var(--bg-app)', border: '1px solid var(--border-light)', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '1px' }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📁 {inst.campaign?.name || '—'}</span>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🎯 {inst.adset?.name || '—'}</span>
@@ -406,7 +406,7 @@ const Metricas = () => {
       } else {
         setSelectedBm(saved.bmId);
       }
-    } catch {}
+    } catch { /* ignorar falha silenciosamente */ }
   }, [selectedBm]);
 
   // ── Carregar BMs ──────────────────────────────────────────────────────────

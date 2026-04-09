@@ -4,12 +4,12 @@ import {
   AlertCircle, Loader2, Check, ChevronDown, X, Settings, ArrowRight,
   Users, ShoppingCart, Zap, FileText, Trash2,
 } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
+
 import { CLIENTS } from '../data/mockData';
 import {
   loadConversions, saveConversions, loadProjectGoals, saveProjectGoals,
   getDateRange, getCohortLeads, calcPacing, calcFunnel, calcFinancials,
-  buildUTMMatrix, ACTION_META, parseCSV, upsertFromCSV, getAction,
+  buildUTMMatrix, ACTION_META, parseCSV, upsertFromCSV,
 } from '../utils/demandos';
 
 const META_API   = 'https://graph.facebook.com/v25.0';
@@ -52,7 +52,7 @@ const loadProjects = () => {
 const card = (extra = {}) => ({ background: BG_CARD, border: `1px solid ${BORDER}`, borderRadius: '12px', ...extra });
 
 // ── Pacing Bar ────────────────────────────────────────────────────────────────
-const PacingBar = ({ label, current, goal, pct, formatValue, color = PRIMARY }) => {
+const PacingBar = ({ label, current, goal, pct, formatValue }) => {
   const over = pct >= 100;
   const barColor = over ? GREEN : pct >= 70 ? PRIMARY : pct >= 40 ? YELLOW : RED;
   return (
@@ -406,7 +406,7 @@ const ConversionsTable = ({ conversions, projectId, onDelete }) => {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const Tracking = () => {
   const [clients]  = useState(loadClients);
-  const [projects, setProjects] = useState(loadProjects);
+  const [projects] = useState(loadProjects);
   const [selectedClientId, setSelectedClientId] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const urlClient = params.get('client');
@@ -433,7 +433,7 @@ const Tracking = () => {
   useEffect(() => {
     const first = clientProjects[0];
     setSelectedProjectId(first?.id || '');
-  }, [selectedClientId]);
+  }, [selectedClientId, clientProjects]);
 
   useEffect(() => {
     if (selectedProjectId) setGoals(loadProjectGoals(selectedProjectId));
